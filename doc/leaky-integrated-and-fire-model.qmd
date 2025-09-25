@@ -1,0 +1,41 @@
+---
+title: "Leaky-Integrated-and-Fire-Model (LIF)"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: atom-one
+    link-external-icon: true
+    link-external-newwindow: true
+---
+
+## 1. Motivation
+
+Integrate-and-Fire-Models have tradition in neuroscience for modeling neuronal
+activity, where you can with "simple" math easly model the time course of an
+action potential. This model is based on a RC-Circuit, with a input $I$ and a
+resting potential $v_{rest}$.
+
+$$ I(t) = I_{R} + I_{C} $$
+$$ I(t) = \frac{v(t)-v_{rest}}{R} + C \frac{dv}{dt}, \quad \tau_{m} = RC $$
+$$ \tau_{m}\frac{dv}{dt} = -(v(t)-v_{rest}) + RI(t) $$
+
+which is in neuroscience the membrane equation, and a linear differential
+equation. To have have a neuron firing we need to introduce a threshold ($\vartheta$), if the
+membrane potential is crossed, the spike time is noted and the membran
+potential is rested to $v_{reset}$.
+
+$$t_{spike}: v(t_{spike})=\vartheta$$
+
+## 2. Integration
+
+For numerical solving the LIF you can rewrite the membrane equation in the Ornstein-Uhlenbeck form. Which essentially implements $u(t) = -(v(t)-v_{rest})$ and $RI(t) = \mu + \sqrt{2D}\xi(t)$
+which results in:
+
+$$ \tau_{m}\frac{dv}{dt} = -u(t)+ \mu + \sqrt{2D}\xi(t)  $$
+
+where $\sqrt{2D}\xi(t)$ is noise term.
