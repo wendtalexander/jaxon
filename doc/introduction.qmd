@@ -1,0 +1,5 @@
+---
+title: "Welcome to jAxon"
+---
+
+jAxon is a combination of the high performace array computing libaray [JAX](https://docs.jax.dev/en/latest/index.html)

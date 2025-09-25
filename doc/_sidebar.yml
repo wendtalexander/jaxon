@@ -1,0 +1,25 @@
+website:
+  sidebar:
+  - collapse-level: 2
+    contents:
+    - href: index.qmd
+      text: jaxon
+    - href: introduction.qmd
+      text: Introduction
+    - contents:
+      - api/index.qmd
+      - contents:
+        - api/models.lif.qmd
+        - api/models.adex.qmd
+        - api/models.punit.qmd
+        section: Model
+      - contents:
+        - api/stimuli.whitenoise.qmd
+        section: stimulus
+      section: Reference
+    id: api
+    search: true
+    style: docked
+    title: jAxon
+    type: dark
+  - id: dummy-sidebar

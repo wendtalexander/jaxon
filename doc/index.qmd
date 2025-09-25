@@ -1,0 +1,30 @@
+---
+title: "Welcome to jAxon"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+---
+
+## Motivation
+jAxon is a combination of the high performance array computing library
+[JAX](https://docs.jax.dev/en/latest/index.html) and my humble attempt to
+integrate this in neurobiology. Especially to simulate Integrated-and-Fire
+Models. This library is also heavily inspired by current PhD, in which I'm
+working an weakly electric fish, meaning there are more specialized models
+helping to solve my current needs.
+
+## Installation
+You need two major libraries (how saw that one coming?)
+[JAX](https://docs.jax.dev/en/latest/index.html) and for the documentation I'm
+using [quarto](https://quarto.org). Please follow the instruction for these
+libraries!
+
+Here is a simple workflow of how I install this project
+
+```bash
+git clone https://github.com/wendtalexander/jaxon
+```

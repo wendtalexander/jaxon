@@ -1,0 +1,61 @@
+# In doc/_quarto.yml
+project:
+  type: website
+  output-dir: _site
+
+
+format:
+  html:
+    css: api/_styles-quartodoc.css
+    code-fold: true
+    code-summary: "Show the code"
+    theme: cosmo
+    fontsize: 1.1em
+    linestretch: 1.7
+
+website:
+  title: "jAxon"
+  sidebar:
+    title: "jAxon"
+    style: "docked"
+    search: true
+    type: "dark"
+    contents:
+      - text: "Introduction"
+        href: "index.qmd"
+      - section: "Tutorials"
+        contents:
+        - "tutorial.qmd"
+      - section: "API"
+        href: "api/index.qmd"
+        contents:
+        - section: models
+          contents:
+            - api/models.lif.qmd
+            - api/models.adex.qmd
+            - api/models.punit.qmd
+        - section: stimuli
+          contents:
+            - api/stimuli.whitenoise.qmd
+
+quartodoc:
+  package: jaxon
+  dir: "api"
+  css: api/_styles-quartodoc.css
+  renderer:
+    style: markdown
+    table_style: description-list
+  sections:
+    - title: Model
+      desc: Simulation models which you can use
+      contents:
+        - models.lif
+        - models.adex
+        - models.punit
+    - title: stimulus
+      desc: Stimuli functions
+      contents:
+        - stimuli.whitenoise
+
+execute:
+  freeze: auto

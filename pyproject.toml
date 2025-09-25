@@ -1,0 +1,20 @@
+[project]
+name = "jaxon"
+version = "0.1.0"
+description = "Simulation of various leaky-integrated and fire models"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jax[cuda12]>=0.7.2",
+]
+
+[project.optional-dependencies]
+documentation = []
+docs = [
+    "jupyterlab>=4.4.7",
+    "matplotlib>=3.10.6",
+    "pandas>=2.3.2",
+    "plotly>=6.3.0",
+    "quartodoc>=0.11.1",
+]
+

@@ -1,0 +1,101 @@
+# models.punit { #jaxon.models.punit }
+
+`models.punit`
+
+
+
+## Classes
+
+| Name | Description |
+| --- | --- |
+| [PUnitParams](#jaxon.models.punit.PUnitParams) | Parameter class for p-unit model |
+
+### PUnitParams { #jaxon.models.punit.PUnitParams }
+
+```python
+models.punit.PUnitParams(
+    a_zero,
+    delta_a,
+    deltat,
+    dend_tau,
+    input_scaling,
+    mem_tau,
+    noise_strength,
+    ref_period,
+    tau_a,
+    threshold,
+    v_base,
+    v_offset,
+    v_zero,
+)
+```
+
+Parameter class for p-unit model
+
+#### Attributes {.doc-section .doc-section-attributes}
+
+<code>[**a_zero**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Adaptation resting value
+
+<code>[**delta_a**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Sampling interval of adaptation current
+
+<code>[**deltat**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Sampling interval
+
+<code>[**dend_tau**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Time constant of dendritic
+
+<code>[**input_scaling**]{.parameter-name} [:]{.parameter-annotation-sep} [flaot]{.parameter-annotation}</code>
+
+:   Scalar multiplier for external currents
+
+<code>[**mem_tau**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Time constant for membrane
+
+<code>[**noise_strength**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Noise added to the system
+
+<code>[**ref_period**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Refactory period
+
+<code>[**tau_a**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Time constant for adaptation
+
+<code>[**threshold**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Threshold for spiking
+
+<code>[**v_base**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   The reset potential after a spike
+
+<code>[**v_offset**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Voltage offset
+
+<code>[**v_zero**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Resting potential
+
+## Functions
+
+| Name | Description |
+| --- | --- |
+| [simulate](#jaxon.models.punit.simulate) | Simulate a P-unit using JAX, returning a binary spike train. |
+
+### simulate { #jaxon.models.punit.simulate }
+
+```python
+models.punit.simulate(key, stimulus, params)
+```
+
+Simulate a P-unit using JAX, returning a binary spike train.

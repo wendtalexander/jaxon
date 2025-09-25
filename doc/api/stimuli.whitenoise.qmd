@@ -1,0 +1,54 @@
+# stimuli.whitenoise { #jaxon.stimuli.whitenoise }
+
+`stimuli.whitenoise`
+
+
+
+## Functions
+
+| Name | Description |
+| --- | --- |
+| [whitenoise](#jaxon.stimuli.whitenoise.whitenoise) | JAX-native, JIT-compatible band-limited white noise generator. |
+
+### whitenoise { #jaxon.stimuli.whitenoise.whitenoise }
+
+```python
+stimuli.whitenoise.whitenoise(key, cflow, cfup, fs, duration, scaling=1.0)
+```
+
+JAX-native, JIT-compatible band-limited white noise generator.
+
+Generates white noise with a flat power spectrum between `cflow` and
+`cfup` Hertz.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+<code>[**key**]{.parameter-name} [:]{.parameter-annotation-sep} [jax.random.PRNGKey]{.parameter-annotation}</code>
+
+:   The random key for generation.
+
+<code>[**cflow**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Lower cutoff frequency in Hertz.
+
+<code>[**cfup**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Upper cutoff frequency in Hertz.
+
+<code>[**fs**]{.parameter-name} [:]{.parameter-annotation-sep} [int]{.parameter-annotation}</code>
+
+:   Sampling rate in Hz.
+
+<code>[**duration**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation}</code>
+
+:   Total duration of the resulting array in seconds.
+
+<code>[**scaling**]{.parameter-name} [:]{.parameter-annotation-sep} [float]{.parameter-annotation} [ = ]{.parameter-default-sep} [1.0]{.parameter-default}</code>
+
+:   Final scaling factor for the noise.
+
+#### Returns {.doc-section .doc-section-returns}
+
+<code>[**noise**]{.parameter-name} [:]{.parameter-annotation-sep} [1-D JAX array]{.parameter-annotation}</code>
+
+:   Band-limited white noise.
