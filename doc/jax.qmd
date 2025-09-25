@@ -1,0 +1,148 @@
+---
+title: "Introduction to JAX"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: atom-one
+    link-external-icon: true
+    link-external-newwindow: true
+---
+
+This is a quick tutorial on JAX that get you started. JAX can be thought of a
+drop in replacement for [numpy](https://www.numpy.org) with the major
+improvement of using the GPU through the [XLA](https://openxla.org) compiler.
+
+## 1. The JAX Library
+
+First, let's import and `jax` and JAX has numpy module named `jax.numpy`, which can be shortened to `jnp`
+
+```{python}
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
+```
+With this we can simply do things like in numpy, we can create arrays do computations:
+
+```{python}
+arr = jnp.arange(10)
+print(arr)
+new_arr = arr + 10
+print(new_arr)
+```
+
+### 1.1 In place operation
+
+Two major differences to numpy are the in place updates and the creation on random numbers:
+But more on this in [the sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html).
+
+```{python}
+# This will result in an TypeError
+try:
+  arr[0] = 10
+except TypeError:
+  print("This is not allowed in JAX")
+# You can use .at.set methods to circumvent this problem
+arr.at[0].set(10)
+```
+
+### 1.2 Random numbers
+
+Random numbers are generated through so called keys to ensure pure functions.
+Somewhat like the random seed in numpy.
+
+```{python}
+# this will generate the main key
+key = jax.random.PRNGKey(42)
+# you can generate new keys for computations
+old_key, key = jax.random.split(key)
+noise = jax.random.normal(key, 200)
+noise2 = jax.random.normal(old_key, 200)
+
+import plotly.graph_objects as go
+fig = go.Figure()
+fig.add_histogram(x=noise, name="Noise Key 1")
+fig.add_histogram(x=noise2, name="Noise Key 2")
+fig.show()
+
+```
+```{python}
+# but if you use the same key again you get the same random numbers
+noise3 = jax.random.normal(key, 200)
+print(f"All values are the same: {jnp.all(noise == noise3)}")
+```
+
+## 2. Just in time compilation
+
+JAX allows us to improve JAX functions, which can massively decrease computations
+
+```{python}
+def multiplication(a:ArrayLike, b:ArrayLike)->jax.Array:
+  return jnp.dot(a, b)
+
+arr1 = jnp.arange(10000).reshape(100,100)
+arr2 = jnp.ones(10000).reshape(100,100)
+res = multiplication(arr1, arr2)
+
+# you can compile a function with jax.jit
+jitted_fuc = jax.jit(multiplication)
+# or you can add a decorator to a function
+
+@jax.jit
+def multiplication_jitted(a:ArrayLike, b:ArrayLike)->jax.Array:
+  return jnp.dot(a, b)
+
+res = multiplication_jitted(arr1, arr2)
+```
+
+:::{.callout-warning}
+But you can't just in time compile every function! JAX does not allow if the result depends on a condition.
+```python
+def f(x):
+  if x > 0:
+    return x
+  else:
+    return 2 * x
+
+jax.jit(f)(10)  # Raises an error
+```
+:::
+
+## 3. Mapping across multiple entries
+
+Finally, JAX allows to omit for loops by a method called `jax.vmap`.
+With `jax.vmap` you can make computations across a certain array like `arr1`.
+This is useful if you want to calculate the spike rate with a kernel!
+You have like a spike array with shape (trials, time) and a kernel function,
+with `jax.vmap` you can vmap the kernel function over trials.
+
+```{python}
+import jax.scipy as jsp
+
+def calc_spike_rate(binary_spike_train, kernel):
+    return jsp.signal.fftconvolve(binary_spike_train, kernel, "same")
+
+def gauss_kernel_jax(sigma, dt, k_time):
+    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)
+    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma
+    return y
+
+fs = 30_000
+sigma = 0.001
+ktime = 4
+trials = 5
+kernel = gauss_kernel_jax(sigma, 1/fs,ktime)
+spikes = (jax.random.normal(key, (trials, fs))<0.1).astype(int)
+
+vmaped_spike_rate = jax.vmap(calc_spike_rate, in_axes=[0, None])
+res = vmaped_spike_rate(spikes,kernel)
+
+fig = go.Figure()
+fig.add_scatter(x = jnp.arange(30_000)/fs, y = res[0], mode="lines")
+fig.update_xaxes(title_text="Time [s]")
+fig.update_yaxes(title_text="Rate [Hz]")
+```
