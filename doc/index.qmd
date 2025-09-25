@@ -7,6 +7,8 @@ format:
     toc-title: Contents
     code-block-bg: true
     code-block-border-left: "#31BAE9"
+    link-external-icon: true
+    link-external-newwindow: true
 ---
 
 ## Motivation
@@ -18,13 +20,58 @@ working an weakly electric fish, meaning there are more specialized models
 helping to solve my current needs.
 
 ## Installation
-You need two major libraries (how saw that one coming?)
-[JAX](https://docs.jax.dev/en/latest/index.html) and for the documentation I'm
-using [quarto](https://quarto.org). Please follow the instruction for these
+You need two major libraries [JAX](https://docs.jax.dev/en/latest/index.html)
+(how saw that one coming?) and for the documentation I'm using
+[quarto](https://quarto.org). Please follow the instruction for these
 libraries!
 
 Here is a simple workflow of how I install this project
 
 ```bash
 git clone https://github.com/wendtalexander/jaxon
+cd jaxon
+# creating a virtual environment
+python -m venv .venv
+# activate it on windows it is .venv/bin/Activate.psi
+source .venv/bin/activate
+# install all dependencies, including deps needed for documentation
+pip install -e ".[docs]"
 ```
+You can render the documentation with quarto:
+
+~~~bash
+cd doc
+quartodoc build
+quarto preview
+~~~
+
+## Tutorials
+I have assembled or will assemble tutorials for each model that is implemented.
+But we start with a quick introduction into
+[JAX](https://docs.jax.dev/en/latest/index.html). There are some caveats to
+using JAX and I highly recommend reading the [The Sharp
+Bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) of
+JAX.
+
+## To-Dos
+jAxon aims to help anybody that want to simulate Integrated-and-Fire Models in
+a modern approach utilising the GPU
+
+* Docs
+  * Tutorials
+    - [ ] Add tutorials for each Model
+    - [ ] Add JAX tutorial
+    - [ ] Add Integrated-and-Fire model introduction
+
+  * UI
+  - [ ] Add Footer with github link
+
+* jAxon
+  * Models
+  - [ ] Add ELL model
+  - [ ] Add LIF with adaptation
+  * Stimuli
+  - [ ] Add step current
+  - [ ] Add Sinus
+  - [ ] Add Baseline (important for weakly electric fish)
+  - [ ] Add SAM (Sinusoidal amplitude modulations)
