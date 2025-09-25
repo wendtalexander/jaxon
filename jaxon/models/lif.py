@@ -56,9 +56,7 @@ def simulate(key: ArrayLike, stimulus: ArrayLike, params: LIFParams) -> jax.Arra
     # Prepare noise
     noise_key, init_key = jax.random.split(key, 2)
     v_mem_init = jax.random.uniform(init_key)
-    noise = jax.random.normal(noise_key, (n,)) * (
-        params.noise_strength / jnp.sqrt(deltat)
-    )
+    noise = jax.random.normal(noise_key, (n,)) * (params.noise_strength / jnp.sqrt(deltat))
 
     def step(carry, inputs):
         v_mem = carry
