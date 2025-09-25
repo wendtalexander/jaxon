@@ -1,7 +1,7 @@
 [project]
 name = "jaxon"
 version = "0.1.0"
-description = "Simulation of various leaky-integrated and fire models"
+description = "Simulation of various Integrated-and-Fire Models"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,4 +17,53 @@ docs = [
     "plotly>=6.3.0",
     "quartodoc>=0.11.1",
 ]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "W", # pycodestyle
+    "E", # pycodestyle
+    "F", # Pyflakes
+    "UP", # pyupgrade
+    "B", # flake8-bugbear
+    "SIM", # flake8-simplify
+    "ANN", # flake8-annotations
+    "A", # flake8-builtins
+    "COM", # flake8-commas
+    "C4", # flake8-comprehensions
+    "EM", # flake8-error-msg
+    "EXE", # flake8-executable
+    "ICN", # flake8-import-conventions
+    "PT", # flake8-pytest-style
+    "Q", # flake8-quotes
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+    "PD", # pandas-vet
+    "PL", # pylint
+    "TRY", # tryceratops
+    "NPY", # numpy-specific
+    "I", # isort
+    "C90", # complexity (McCabe)
+    "N", # pep8-naming
+    "D", # pydocstyle
+]
+ignore = [
+    "COM812", # missing trailing comma
+    "TD002", # missing todo author
+    "TD003", # missing todo link
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
 
