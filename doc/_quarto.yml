@@ -14,7 +14,7 @@ format:
       dark: darkly
     css:
       - api/_styles-quartodoc.css
-      - style.css
+      - styles.css
     fontsize: 1.1em
     linestretch: 1.7
     grid:
@@ -41,7 +41,8 @@ website:
       - section: "Tutorials"
         contents:
         - jax.qmd
-        - leaky-integrated-and-fire-model.qmd
+        - lif.qmd
+        - alif_ref.qmd
       - section: "API"
         href: "api/index.qmd"
         contents:
@@ -49,6 +50,7 @@ website:
           contents:
             - api/models.lif.qmd
             - api/models.adex.qmd
+            - api/models.alif_ref.qmd
             - api/models.punit.qmd
         - section: stimuli
           contents:
@@ -68,6 +70,7 @@ quartodoc:
         - models.lif
         - models.adex
         - models.punit
+        - models.alif_ref
     - title: stimulus
       desc: Stimuli functions
       contents:
