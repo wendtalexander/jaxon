@@ -1,0 +1,88 @@
+---
+title: "Leaky-Integrated-and-Fire-Model (LIF)"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: atom-one
+    link-external-icon: true
+    link-external-newwindow: true
+---
+
+## 1. Motivation
+
+Integrate-and-Fire-Models have tradition in neuroscience for modeling neuronal
+activity, where you can with "simple" math easily model the time course of an
+action potential. This model is based on a RC-Circuit, with a input $I$ and a
+resting potential $v_{rest}$.
+
+$$ I(t) = I_{R} + I_{C} $$
+$$ I(t) = \frac{v(t)-v_{rest}}{R} + C \frac{dv}{dt}, \quad \tau_{m} = RC $$
+$$ \tau_{m}\frac{dv}{dt} = -(v(t)-v_{rest}) + RI(t) $$
+
+Which is in neuroscience the membrane equation, and a linear differential
+equation. To have have a neuron firing we need to introduce a threshold ($\vartheta$), if the
+membrane potential is crossed, the spike time is noted and the membrane
+potential is rested to $v_{reset}$.
+
+$$t_{spike}: v(t_{spike})=\vartheta$$
+
+## 2. Implementation
+
+For numerical solving the LIF you can rewrite the membrane equation in the
+Ornstein-Uhlenbeck form. Which essentially implements $u(t) = (v(t)-v_{rest})$
+and $RI(t) = \mu$ and adding a noise term $\sqrt{2D}\xi(t)$. This results in:
+
+$$ \tau_{m}\frac{dv}{dt} = -u(t)+ \mu + \sqrt{2D}\xi(t)  $$
+
+So in `jAxon` each parameter in this equation is defined with a dataclass that
+holds these values: [LIFParams](api/models.lif.qmd#LIFParams) which are in this
+case essentially $\mu$, $\vartheta$, $tau_{m}$ and a scaling factor for the
+noise. This dataclass is then passed in the simulate function of the LIF
+script.
+
+## 3. Example
+Here is a minimal example that get you started.
+
+```{python}
+import jax
+import jax.numpy as jnp
+import jaxon.models.lif as lif
+
+# parameters for LIF model
+fs = 1000
+duration = 0.1
+threshold = 1.0
+v_offset = 0.5
+tau_mem = 0.01
+v_base = 0.0
+noise_strength = 0.01
+
+# first generate a random key for the LIF model
+key = jax.random.PRNGKey(42)
+keys = jax.random.split(key, 10)
+time = jnp.arange(0, duration, 1/fs)
+params = lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)
+stimulus = jnp.ones_like(time)
+binary_spikes, vmem = lif.simulate(key, stimulus, params)
+print(f"Indiviual indeces of the spike times are {time[binary_spikes.astype(bool)]}")
+```
+
+We can now plot the simulation result of the LIF simulation.
+
+```{python}
+import plotly.graph_objects as go 
+
+fig = go.Figure()
+fig.add_scatter(x=time, y=vmem, mode='lines', name="V")
+
+fig.add_scatter(x=time[binary_spikes.astype(bool)],
+                y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',
+                marker_size=10, marker_color="red", marker_symbol="arrow-down",
+                name="Spikes")
+fig.update_layout(xaxis_title="Time [s]", yaxis_title="Volatage [aU]")
+```
