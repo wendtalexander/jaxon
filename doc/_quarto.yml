@@ -25,10 +25,12 @@ format:
 
 website:
   title: "jAxon"
+  favicon: favicon.png
   # navbar:
   #   right:
   sidebar:
-    title: "jAxon"
+    title: false
+    logo: logo.png
     style: "docked"
     search: true
     type: "dark"
