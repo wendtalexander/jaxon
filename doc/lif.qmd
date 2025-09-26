@@ -37,7 +37,7 @@ For numerical solving the LIF you can rewrite the membrane equation in the
 Ornstein-Uhlenbeck form. Which essentially implements $u(t) = (v(t)-v_{rest})$
 and $RI(t) = \mu$ and adding a noise term $\sqrt{2D}\xi(t)$. This results in:
 
-$$ \tau_{m}\frac{dv}{dt} = -u(t)+ \mu + \sqrt{2D}\xi(t)  $$
+$$ \tau_{m}\frac{du}{dt} = -u(t)+ \mu + \sqrt{2D}\xi(t)  $$
 
 So in `jAxon` each parameter in this equation is defined with a dataclass that
 holds these values: [LIFParams](api/models.lif.qmd#LIFParams) which are in this
