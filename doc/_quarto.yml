@@ -42,7 +42,8 @@ website:
         contents:
         - jax.qmd
         - lif.qmd
-        - alif_ref.qmd
+        - alif.qmd
+        - adex.qmd
       - section: "API"
         href: "api/index.qmd"
         contents:
@@ -50,7 +51,7 @@ website:
           contents:
             - api/models.lif.qmd
             - api/models.adex.qmd
-            - api/models.alif_ref.qmd
+            - api/models.alif.qmd
             - api/models.punit.qmd
         - section: stimuli
           contents:
@@ -70,7 +71,7 @@ quartodoc:
         - models.lif
         - models.adex
         - models.punit
-        - models.alif_ref
+        - models.alif
     - title: stimulus
       desc: Stimuli functions
       contents:
