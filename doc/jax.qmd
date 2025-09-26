@@ -24,7 +24,8 @@ First, let's import and `jax` and JAX has numpy module named `jax.numpy`, which 
 ```{python}
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
+import plotly.graph_objects as go
+from jax.typing import ArrayLike # for type annotation
 ```
 With this we can simply do things like in numpy, we can create arrays do computations:
 
@@ -63,7 +64,6 @@ old_key, key = jax.random.split(key)
 noise = jax.random.normal(key, 200)
 noise2 = jax.random.normal(old_key, 200)
 
-import plotly.graph_objects as go
 fig = go.Figure()
 fig.add_histogram(x=noise, name="Noise Key 1")
 fig.add_histogram(x=noise2, name="Noise Key 2")
@@ -142,7 +142,7 @@ vmaped_spike_rate = jax.vmap(calc_spike_rate, in_axes=[0, None])
 res = vmaped_spike_rate(spikes,kernel)
 
 fig = go.Figure()
-fig.add_scatter(x = jnp.arange(30_000)/fs, y = res[0], mode="lines")
+fig.add_scatter(x = jnp.arange(fs)/fs, y = res[0], mode="lines")
 fig.update_xaxes(title_text="Time [s]")
 fig.update_yaxes(title_text="Rate [Hz]")
 ```
