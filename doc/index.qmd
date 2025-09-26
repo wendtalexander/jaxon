@@ -60,16 +60,16 @@ a modern approach utilising the GPU
 * Docs
   * Tutorials
     - [ ] Add tutorials for each Model
-    - [ ] Add JAX tutorial
-    - [ ] Add Integrated-and-Fire model introduction
+    - [x] Add JAX tutorial
+    - [x] Add Integrated-and-Fire model introduction
 
   * UI
-  - [ ] Add Footer with github link
+  - [x] Add githublink
 
 * jAxon
   * Models
   - [ ] Add ELL model
-  - [ ] Add LIF with adaptation
+  - [x] Add LIF with adaptation
   * Stimuli
   - [ ] Add step current
   - [ ] Add Sinus
