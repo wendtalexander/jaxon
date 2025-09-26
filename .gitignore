@@ -13,3 +13,4 @@ wheels/
 # quarto 
 /.quarto/
 **/*.quarto_ipynb
+api/
