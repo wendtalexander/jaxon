@@ -40,7 +40,7 @@ Where the adaption is defined in @eq-adap
 During the refractory period there is no spike elicited.
 
 Like in the [LIF](lif.qmd) has a dataclass that holds the parameter needed for simulating the model:
-[ALIFRefParams](api/models.alif_ref.qmd)
+[ALIFRefParams](api/models.alif.qmd)
 
 
 ## 3. Example
