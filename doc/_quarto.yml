@@ -2,8 +2,8 @@
 project:
   type: website
   output-dir: _site
-  preview:
-    port: 7000
+  # preview:
+  #   port: 7000
 
 format:
   html:
