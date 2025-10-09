@@ -98,6 +98,7 @@ rate = calc_spike_rate(binary_spikes, kernel)
 We can now plot the simulation result of the LIF simulation.
 
 ```{python}
+#| output: false
 import plotly.graph_objects as go 
 from plotly.subplots import make_subplots
 
@@ -109,8 +110,16 @@ fig.add_scatter(x=time[binary_spikes.astype(bool)],
                 y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',
                 marker_size=10, marker_color="red", marker_symbol="arrow-down",
                 name="Spikes", secondary_y=False)
-fig.add_scatter(x=time, y=rate, name="Rate [Hz]", secondary_y=True, marker_color="black")
+fig.add_scatter(x=time, y=rate, name="Rate [Hz]", secondary_y=True, marker_color="magenta", line_width=4)
 
 fig.update_layout(xaxis_title="Time [s]", yaxis_title="Volatage [aU]")
 fig.update_yaxes(title_text="Rate [Hz]", secondary_y=True)
+```
+```{python}
+#| echo: false
+#| renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```

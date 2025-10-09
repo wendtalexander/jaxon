@@ -64,12 +64,22 @@ old_key, key = jax.random.split(key)
 noise = jax.random.normal(key, 200)
 noise2 = jax.random.normal(old_key, 200)
 
+```
+```{python}
+#| output: false
 fig = go.Figure()
 fig.add_histogram(x=noise, name="Noise Key 1")
 fig.add_histogram(x=noise2, name="Noise Key 2")
-fig.show()
-
 ```
+```{python}
+#| echo: false
+#| renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
+
 ```{python}
 # but if you use the same key again you get the same random numbers
 noise3 = jax.random.normal(key, 200)
@@ -121,6 +131,7 @@ You have like a spike array with shape (trials, time) and a kernel function,
 with `jax.vmap` you can vmap the kernel function over trials.
 
 ```{python}
+#| output: false
 import jax.scipy as jsp
 
 def calc_spike_rate(binary_spike_train, kernel):
@@ -145,4 +156,13 @@ fig = go.Figure()
 fig.add_scatter(x = jnp.arange(fs)/fs, y = res[0], mode="lines")
 fig.update_xaxes(title_text="Time [s]")
 fig.update_yaxes(title_text="Rate [Hz]")
+```
+
+```{python}
+#| echo: false
+#| renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
