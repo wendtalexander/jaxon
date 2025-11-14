@@ -136,3 +136,51 @@ def simulate(key: ArrayLike, stimulus: ArrayLike, params: PUnitParams) -> SIMOut
     _, (spikes, vmem) = jax.lax.scan(step, initial_carry, (stimulus, noise))
 
     return SIMOutput(spikes.astype(jnp.int32), vmem)
+
+
+def simulate_spikes(key: ArrayLike, stimulus: ArrayLike, params: PUnitParams) -> jax.Array:
+    """Simulate binary spike train.
+
+    Helper function that only returns the binary spike train.
+    Helpful for vmapping over trials.
+
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for noise generation.
+    stimulus : 1-D jnp.ndarray
+        Input stimulus.
+    params: PUnitParams
+        PUnitParams parameter class
+
+    Returns
+    -------
+    jax.Array
+        Binary spike train
+
+    """
+    return simulate(key, stimulus, params).spikes
+
+
+def simulate_mem_v(key: ArrayLike, stimulus: ArrayLike, params: PUnitParams) -> jax.Array:
+    """Simulate membrane voltage.
+
+    Helper function that only returns the membrane voltage.
+    Helpful for vmapping over trials.
+
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for noise generation.
+    stimulus : 1-D jnp.ndarray
+        Input stimulus.
+    params: PUnitParams
+        PUnitParams parameter class
+
+    Returns
+    -------
+    jax.Array
+        Membrane Voltage
+
+    """
+    return simulate(key, stimulus, params).v_mem
