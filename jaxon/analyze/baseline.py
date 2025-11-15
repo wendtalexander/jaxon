@@ -175,8 +175,7 @@ def vector_strength(spikes: ArrayLike, cycles: float | ArrayLike) -> jnp.ndarray
         period = cycles[k + 1] - cycles[k]
         phase = 2 * np.pi * (spike - cycle) / period
         vectors[i] = np.exp(1j * phase)
-    vs = np.abs(np.mean(vectors))
-    return vs
+    return np.abs(np.mean(vectors))
 
 
 if __name__ == "__main__":
@@ -214,7 +213,3 @@ if __name__ == "__main__":
             res = burst_fraction(spike_times, eodf)
             vs = vector_strength(spike_times, eod_period)
             cphase, crate = cyclic_rate(spike_times, eod_period, sigma=0.02)
-            print(res)
-            print(vs)
-            print(cphase, crate)
-        
