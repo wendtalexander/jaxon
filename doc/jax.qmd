@@ -25,7 +25,7 @@ First, let's import and `jax` and JAX has numpy module named `jax.numpy`, which 
 import jax
 import jax.numpy as jnp
 import plotly.graph_objects as go
-from jax.typing import ArrayLike # for type annotation
+from jax.typing import ArrayLike  # for type annotation
 ```
 With this we can simply do things like in numpy, we can create arrays do computations:
 
@@ -44,9 +44,9 @@ But more on this in [the sharp bits](https://docs.jax.dev/en/latest/notebooks/Co
 ```{python}
 # This will result in an TypeError
 try:
-  arr[0] = 10
+    arr[0] = 10
 except TypeError:
-  print("This is not allowed in JAX")
+    print("This is not allowed in JAX")
 # You can use .at.set methods to circumvent this problem
 arr.at[0].set(10)
 ```
@@ -63,17 +63,16 @@ key = jax.random.PRNGKey(42)
 old_key, key = jax.random.split(key)
 noise = jax.random.normal(key, 200)
 noise2 = jax.random.normal(old_key, 200)
-
 ```
 ```{python}
-#| output: false
+# | output: false
 fig = go.Figure()
 fig.add_histogram(x=noise, name="Noise Key 1")
 fig.add_histogram(x=noise2, name="Noise Key 2")
 ```
 ```{python}
-#| echo: false
-#| renderings: [light, dark]
+# | echo: false
+# | renderings: [light, dark]
 fig.update_layout(template="plotly_white")
 display(fig)
 fig.update_layout(template="plotly_dark")
@@ -91,20 +90,23 @@ print(f"All values are the same: {jnp.all(noise == noise3)}")
 JAX allows us to improve JAX functions, which can massively decrease computations
 
 ```{python}
-def multiplication(a:ArrayLike, b:ArrayLike)->jax.Array:
-  return jnp.dot(a, b)
+def multiplication(a: ArrayLike, b: ArrayLike) -> jax.Array:
+    return jnp.dot(a, b)
 
-arr1 = jnp.arange(10000).reshape(100,100)
-arr2 = jnp.ones(10000).reshape(100,100)
+
+arr1 = jnp.arange(10000).reshape(100, 100)
+arr2 = jnp.ones(10000).reshape(100, 100)
 res = multiplication(arr1, arr2)
 
 # you can compile a function with jax.jit
 jitted_fuc = jax.jit(multiplication)
 # or you can add a decorator to a function
 
+
 @jax.jit
-def multiplication_jitted(a:ArrayLike, b:ArrayLike)->jax.Array:
-  return jnp.dot(a, b)
+def multiplication_jitted(a: ArrayLike, b: ArrayLike) -> jax.Array:
+    return jnp.dot(a, b)
+
 
 res = multiplication_jitted(arr1, arr2)
 ```
@@ -113,10 +115,11 @@ res = multiplication_jitted(arr1, arr2)
 But you can't just in time compile every function! JAX does not allow if the result depends on a condition.
 ```python
 def f(x):
-  if x > 0:
-    return x
-  else:
-    return 2 * x
+    if x > 0:
+        return x
+    else:
+        return 2 * x
+
 
 jax.jit(f)(10)  # Raises an error
 ```
@@ -131,36 +134,39 @@ You have like a spike array with shape (trials, time) and a kernel function,
 with `jax.vmap` you can vmap the kernel function over trials.
 
 ```{python}
-#| output: false
+# | output: false
 import jax.scipy as jsp
+
 
 def calc_spike_rate(binary_spike_train, kernel):
     return jsp.signal.fftconvolve(binary_spike_train, kernel, "same")
+
 
 def gauss_kernel_jax(sigma, dt, k_time):
     x = jnp.arange(-k_time * sigma, k_time * sigma, dt)
     y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma
     return y
 
+
 fs = 30_000
 sigma = 0.001
 ktime = 4
 trials = 5
-kernel = gauss_kernel_jax(sigma, 1/fs,ktime)
-spikes = (jax.random.normal(key, (trials, fs))<0.1).astype(int)
+kernel = gauss_kernel_jax(sigma, 1 / fs, ktime)
+spikes = (jax.random.normal(key, (trials, fs)) < 0.1).astype(int)
 
 vmaped_spike_rate = jax.vmap(calc_spike_rate, in_axes=[0, None])
-res = vmaped_spike_rate(spikes,kernel)
+res = vmaped_spike_rate(spikes, kernel)
 
 fig = go.Figure()
-fig.add_scatter(x = jnp.arange(fs)/fs, y = res[0], mode="lines")
+fig.add_scatter(x=jnp.arange(fs) / fs, y=res[0], mode="lines")
 fig.update_xaxes(title_text="Time [s]")
 fig.update_yaxes(title_text="Rate [Hz]")
 ```
 
 ```{python}
-#| echo: false
-#| renderings: [light, dark]
+# | echo: false
+# | renderings: [light, dark]
 fig.update_layout(template="plotly_white")
 display(fig)
 fig.update_layout(template="plotly_dark")
