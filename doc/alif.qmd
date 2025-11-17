@@ -49,8 +49,9 @@ Here is a minimal example that get you started.
 ```{python}
 import jax
 import jax.numpy as jnp
-import jaxon.models.alif as alif
 import jax.scipy as jsp
+
+import jaxon.models.alif as alif
 
 # parameters for LIF model
 fs = 1000
@@ -60,7 +61,7 @@ v_offset = 0.5
 tau_mem = 0.01
 tau_adapt = 1
 a_zero = 0.0
-deltat_adapt=0.01
+deltat_adapt = 0.01
 ref_period = 0.001
 v_base = 0.0
 noise_strength = 0.01
@@ -72,12 +73,19 @@ ktime = 4
 # first generate a random key for the LIF model
 key = jax.random.PRNGKey(42)
 keys = jax.random.split(key, 10)
-time = jnp.arange(0, duration, 1/fs)
-params = alif.ALIFRefParams(fs=fs, threshold=threshold, v_offset=v_offset,
-                            tau_mem=tau_mem, tau_adapt= tau_adapt,
-                            a_zero=a_zero, v_base=v_base,ref_period=ref_period,
-                            deltat_adapt=deltat_adapt,
-                            noise_strength=noise_strength)
+time = jnp.arange(0, duration, 1 / fs)
+params = alif.ALIFRefParams(
+    fs=fs,
+    threshold=threshold,
+    v_offset=v_offset,
+    tau_mem=tau_mem,
+    tau_adapt=tau_adapt,
+    a_zero=a_zero,
+    v_base=v_base,
+    ref_period=ref_period,
+    deltat_adapt=deltat_adapt,
+    noise_strength=noise_strength,
+)
 stimulus = jnp.ones_like(time)
 binary_spikes, vmem = alif.simulate(key, stimulus, params)
 
@@ -85,12 +93,14 @@ binary_spikes, vmem = alif.simulate(key, stimulus, params)
 def calc_spike_rate(binary_spike_train, kernel):
     return jsp.signal.fftconvolve(binary_spike_train, kernel, "same")
 
+
 def gauss_kernel_jax(sigma, dt, k_time):
     x = jnp.arange(-k_time * sigma, k_time * sigma, dt)
     y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma
     return y
 
-kernel = gauss_kernel_jax(sigma, 1/fs,ktime)
+
+kernel = gauss_kernel_jax(sigma, 1 / fs, ktime)
 
 rate = calc_spike_rate(binary_spikes, kernel)
 ```
@@ -98,26 +108,34 @@ rate = calc_spike_rate(binary_spikes, kernel)
 We can now plot the simulation result of the LIF simulation.
 
 ```{python}
-#| output: false
-import plotly.graph_objects as go 
+# | output: false
+import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_scatter(x=time, y=vmem, mode='lines', name="V", secondary_y=False)
+fig.add_scatter(x=time, y=vmem, mode="lines", name="V", secondary_y=False)
 
 
-fig.add_scatter(x=time[binary_spikes.astype(bool)],
-                y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',
-                marker_size=10, marker_color="red", marker_symbol="arrow-down",
-                name="Spikes", secondary_y=False)
-fig.add_scatter(x=time, y=rate, name="Rate [Hz]", secondary_y=True, marker_color="magenta", line_width=4)
+fig.add_scatter(
+    x=time[binary_spikes.astype(bool)],
+    y=vmem[binary_spikes.astype(bool)] + threshold,
+    mode="markers",
+    marker_size=10,
+    marker_color="red",
+    marker_symbol="arrow-down",
+    name="Spikes",
+    secondary_y=False,
+)
+fig.add_scatter(
+    x=time, y=rate, name="Rate [Hz]", secondary_y=True, marker_color="magenta", line_width=4
+)
 
 fig.update_layout(xaxis_title="Time [s]", yaxis_title="Volatage [aU]")
 fig.update_yaxes(title_text="Rate [Hz]", secondary_y=True)
 ```
 ```{python}
-#| echo: false
-#| renderings: [light, dark]
+# | echo: false
+# | renderings: [light, dark]
 fig.update_layout(template="plotly_white")
 display(fig)
 fig.update_layout(template="plotly_dark")
