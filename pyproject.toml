@@ -5,7 +5,7 @@ description = "Simulation of various Integrated-and-Fire Models"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "jax>=0.7.2",
+    "jax[cuda13]>=0.7.2",
     "numpy>=2.3.3",
 ]
 
@@ -14,6 +14,7 @@ documentation = []
 docs = [
     "jupyterlab>=4.4.7",
     "matplotlib>=3.10.6",
+    "numba>=0.62.1",
     "pandas>=2.3.2",
     "plotly>=6.3.0",
     "pyqt6>=6.10.0",
