@@ -1,0 +1,116 @@
+---
+title: "Baseline comparision"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: atom-one
+    link-external-icon: true
+    link-external-newwindow: true
+    eqn-number: true
+---
+
+### 1. Motivation
+Here we what to compare the jax punit model with the model written in numba from the [bendalab](https://github.com/bendalab/punitmodel)
+
+### 2.Baseline Rate
+```{python}
+import jax
+import jax.numpy as jnp
+import jax.scipy as jsp
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from punit_numba import simulate as simulate_numba
+
+import jaxon.models.punit as punit
+from jaxon.analyze.baseline import interval_statistics
+from jaxon.dsp.kernels import gauss_kernel
+from jaxon.dsp.rate import spike_rate
+from jaxon.utils.output import to_spikes_times
+
+simulate = jax.jit(punit.simulate_spikes)
+calc_rate = jax.jit(spike_rate)
+# Path to model parameters
+model_path = "../jaxon/models/parameters_punits.csv"
+models: pd.DataFrame = pd.read_csv(model_path)
+duration = 15
+fs = 20_000
+time = jnp.arange(0, 15, 1 / fs)
+kernel = gauss_kernel(0.001, 1 / fs, 4)
+key = jax.random.PRNGKey(42)
+keys = jax.random.split(key, models.shape[0])
+rates = np.zeros(models.shape[0])
+rates_numba = np.zeros(models.shape[0])
+
+# isis_jax = np.zeros(models.shape[0])
+# isis_numba = np.zeros(models.shape[0])
+cv_jax = np.zeros(models.shape[0])
+cv_numba = np.zeros(models.shape[0])
+
+for i, model in enumerate(models.iterrows()):
+    params = model[1]
+    cell = params.pop("cell")
+    eodf = params.pop("EODf")
+
+    eod_period = 1 / eodf
+    max_eods = 15.5
+
+    punit_params = punit.PUnitParams(**params)
+    baseline = jnp.sin(2 * jnp.pi * eodf * time)
+    baseline_numba = np.sin(2 * np.pi * eodf * time)
+
+    spikes = simulate(keys[model[0]], baseline, punit_params)
+    spike_times = to_spikes_times(spikes, fs)
+
+    spikes_numba = simulate_numba(baseline_numba, **params)
+    bin_spikes = np.zeros_like(time)
+    spike_idx = np.round(spikes_numba * fs).astype(int)
+    spike_idx = np.clip(spike_idx, 0, len(time) - 1)
+
+    bin_spikes[spike_idx] = 1
+
+    rates[i] = jnp.mean(calc_rate(spikes, kernel))
+    rates_numba[i] = jnp.mean(calc_rate(jnp.array(bin_spikes), kernel))
+
+    isis_jax, kde_jax, rate_jax, cv_jax[i] = interval_statistics(
+        spike_times, sigma=0.05 * eod_period, maxisi=max_eods * eod_period
+    )
+    isis_numba, kde_numba, rate_numba, cv_numba[i] = interval_statistics(
+        spikes_numba, sigma=0.05 * eod_period, maxisi=max_eods * eod_period
+    )
+```
+```{python}
+fig = go.Figure()
+fig.add_histogram(
+    x=np.abs(rates_numba - rates),
+)
+fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
+fig.show()
+```
+```{python}
+fig = go.Figure()
+fig.add_histogram(
+    x=np.abs(cv_jax - cv_numba),
+)
+fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
+fig.show()
+```
+
+```{python}
+fig = go.Figure()
+fig.add_scattergl(
+    x=isis_jax,
+    y=kde_jax,
+)
+fig.add_scattergl(
+    x=isis_numba,
+    y=kde_numba,
+)
+fig.show()
+```
