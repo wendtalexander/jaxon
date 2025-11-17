@@ -46,6 +46,10 @@ website:
         - lif.qmd
         - alif.qmd
         - adex.qmd
+      - section: "P-Unit model"
+        contents:
+        - baseline.qmd
+          
       - section: "API"
         href: "api/index.qmd"
         contents:
@@ -55,7 +59,9 @@ website:
             - api/models.adex.qmd
             - api/models.alif.qmd
             - api/models.punit.qmd
+          
         - section: stimuli
+
           contents:
             - api/stimuli.whitenoise.qmd
 
