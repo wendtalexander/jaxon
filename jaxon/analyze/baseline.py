@@ -51,7 +51,7 @@ def cyclic_rate(
         phase = 2 * np.pi * (spike - cycle) / period
         cycle_spikes = np.array([phase - 2 * np.pi, phase, phase + 2 * np.pi])
         kernel = jsp.stats.gaussian_kde(
-            cycle_spikes, 2 * np.pi * sigma / np.std(cycle_spikes, ddof=1)
+            cycle_spikes, 2 * jnp.pi * sigma / jnp.std(cycle_spikes, ddof=1)
         )
         cycle_rate = kernel(phases)
         rate += cycle_rate
