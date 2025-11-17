@@ -51,6 +51,8 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 
 import jaxon.models.adex as adex
+from jaxon.dsp.kernels import gauss_kernel
+from jaxon.dsp.rate import spike_rate
 
 duration = 10
 # parameters for LIF model
@@ -94,19 +96,9 @@ stimulus = jnp.ones_like(time)
 binary_spikes, vmem = adex.simulate(key, stimulus, params)
 
 
-def calc_spike_rate(binary_spike_train, kernel):
-    return jsp.signal.fftconvolve(binary_spike_train, kernel, "same")
+kernel = gauss_kernel(sigma, 1 / fs, ktime)
 
-
-def gauss_kernel_jax(sigma, dt, k_time):
-    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)
-    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma
-    return y
-
-
-kernel = gauss_kernel_jax(sigma, 1 / fs, ktime)
-
-rate = calc_spike_rate(binary_spikes, kernel)
+rate = spike_rate(binary_spikes, kernel)
 ```
 
 We can now plot the simulation result of the LIF simulation.
