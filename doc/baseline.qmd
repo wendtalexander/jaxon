@@ -65,10 +65,11 @@ calc_rate = jax.jit(spike_rate)
 # Path to model parameters
 model_path = "../jaxon/models/parameters_punits.csv"
 models: pd.DataFrame = pd.read_csv(model_path)
+
 duration = 5
 max_lag = 15
-
 fs = 20_000
+
 t = jnp.arange(0, duration, 1 / fs)
 kernel = gauss_kernel(0.001, 1 / fs, 4)
 key = jax.random.PRNGKey(42)
