@@ -178,6 +178,43 @@ def vector_strength(spikes: ArrayLike, cycles: float | ArrayLike) -> jnp.ndarray
     return np.abs(np.mean(vectors))
 
 
+def serial_correlations(spikes, max_lag=10):
+    """Serial correlations of interspike intervals.
+
+    Parameters
+    ----------
+    spikes: nparray of floats
+        Spike times of baseline activity.
+    max_lag: int
+        Compute serial correlations up to this lag.
+
+    Returns
+    -------
+    lags: ndarray of ints
+        Lags for which interspike interval correlations have been computed.
+        First one is zero, last one is `max_lag`.
+    corrs: ndarray of floats
+        Serial correlations for all `lags`.
+    null: float
+        99.9% percentile of the null hypothesis of no correlation.
+    """
+    intervals = np.diff(spikes)
+    lags = np.arange(0, max_lag + 1, 1)
+    corrs = np.zeros(max_lag + 1)
+    corrs[0] = np.corrcoef(intervals, intervals)[0, 1]
+    for i, lag in enumerate(lags[1:]):
+        corrs[i + 1] = np.corrcoef(intervals[:-lag], intervals[lag:])[0, 1]
+    # permuation test:
+    rng = np.random.default_rng()
+    perm_corrs = np.zeros(10000)
+    for k in range(len(perm_corrs)):
+        xintervals = rng.permutation(intervals)
+        yintervals = rng.permutation(intervals)
+        perm_corrs[k] = np.corrcoef(xintervals, yintervals)[0, 1]
+    low, high = np.quantile(perm_corrs, (0.001, 0.999))
+    return lags, corrs, max(-low, high)
+
+
 if __name__ == "__main__":
     import pandas as pd
     from IPython import embed
