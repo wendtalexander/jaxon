@@ -1,0 +1,167 @@
+---
+title: "Spectral comparision"
+format:
+  html:
+    toc: true
+    css: styles.css
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: atom-one
+    link-external-icon: true
+    link-external-newwindow: true
+    eqn-number: true
+---
+
+### 1. Motivation
+Here we what to compare the jax punit model with the model written in numba from the [bendalab](https://github.com/bendalab/punitmodel)
+
+### 2. Data
+```{python}
+
+from dataclasses import dataclass, field
+from time import time
+
+import jax
+import jax.numpy as jnp
+import jax.scipy as jsp
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from punit_numba import simulate as simulate_numba
+
+import jaxon.models.punit as punit
+from jaxon.analyze.spectral import spectra
+from jaxon.dsp.kernels import gauss_kernel
+from jaxon.dsp.rate import spike_rate
+from jaxon.stimuli.noise import whitenoise
+from jaxon.utils.output import to_spikes_times
+
+
+@dataclass()
+class Result:
+    jax_or_numba: str
+    cell_id: str
+    f: jnp.ndarray
+    pyy: jnp.ndarray
+    pxx: jnp.ndarray
+    pxy: jnp.ndarray
+
+
+simulate = jax.jit(punit.simulate_spikes)
+calc_rate = jax.jit(spike_rate)
+# Path to model parameters
+model_path = "../jaxon/models/parameters_punits.csv"
+models: pd.DataFrame = pd.read_csv(model_path)
+
+duration = 15
+fs = 20_000
+cflow = 0
+cfup = 300
+contrast = 0.05
+nfft = 2**9
+t = jnp.arange(0, duration, 1 / fs)
+key = jax.random.PRNGKey(42)
+keys = jax.random.split(key, 2 * models.shape[0]).reshape(2, models.shape[0], -1)
+jax_results: list[Result] = []
+numba_results: list[Result] = []
+
+for i, model in enumerate(models.iterrows()):
+    params = model[1]
+    cell = params.pop("cell")
+    print(f"Processing {cell}")
+    eodf = params.pop("EODf")
+    white_noise = whitenoise(
+        keys[0, i],
+        cflow=cflow,
+        cfup=cfup,
+        fs=fs,
+        duration=duration,
+    )
+
+    punit_params = punit.PUnitParams(**params)
+    baseline = jnp.sin(2 * jnp.pi * eodf * t)
+    stimulus = baseline + (baseline * (white_noise * contrast))
+
+    # JAX
+    start_time = time()
+    spikes = simulate(keys[1, i], stimulus, punit_params)
+    f, pyy, pxx, pxy = spectra(spikes=spikes, stimulus=white_noise, fs=fs, nfft=nfft)
+    coherence = (np.abs(pxy) ** 2) / (pyy * pxx)
+    stop_time = time()
+    jax_res = Result(jax_or_numba="jax", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)
+    jax_results.append(jax_res)
+    print(f"Jax calculations {stop_time - start_time}")
+
+    # Numba
+    start_time = time()
+    spikes_numba = simulate_numba(np.array(stimulus), **params)
+    bin_spikes = np.zeros_like(t)
+    spike_idx = np.round(spikes_numba * fs).astype(int)
+    spike_idx = np.clip(spike_idx, 0, len(t) - 1)
+    bin_spikes[spike_idx] = 1
+    f, pyy, pxx, pxy = spectra(spikes=bin_spikes, stimulus=white_noise, fs=fs, nfft=nfft)
+    coherence = (np.abs(pxy) ** 2) / (pyy * pxx)
+    stop_time = time()
+    numba_res = Result(jax_or_numba="numba", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)
+    numba_results.append(numba_res)
+    print(f"Numba calculations {stop_time - start_time}")
+```
+### 3. Spectra
+```{python}
+fig = go.Figure()
+fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pyy, name="Stimulus")
+fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
+fig.update_yaxes(title_text="$P_{yy}$", type="log", range=[-9, -2])
+fig.show()
+
+fig = go.Figure()
+fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pxx, name="jax")
+fig.add_scattergl(x=numba_results[0].f, y=numba_results[0].pxx, name="numba")
+fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
+fig.update_yaxes(title_text="$P_{xx}$", type="log", range=[-9, -2])
+fig.show()
+
+fig = go.Figure()
+fig.add_scattergl(x=jax_results[0].f, y=np.abs(jax_results[0].pxy), name="jax")
+fig.add_scattergl(x=numba_results[0].f, y=np.abs(numba_results[0].pxy), name="numba")
+fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
+fig.update_yaxes(title_text="$P_{xy}$", type="log", range=[-9, -2])
+fig.show()
+```
+
+### 4. Coherence
+```{python}
+coherence_jax = np.abs(jax_results[0].pxy) ** 2 / (jax_results[0].pxx * jax_results[0].pyy)
+
+coherence_numba = np.abs(numba_results[0].pxy) ** 2 / (numba_results[0].pxx * numba_results[0].pyy)
+fig = go.Figure()
+fig.add_scattergl(x=jax_results[0].f, y=coherence_jax, name="jax")
+fig.add_scattergl(x=numba_results[0].f, y=coherence_numba, name="numba")
+fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
+fig.update_yaxes(title_text="$C_{xy}$", range=[0, 1])
+fig.show()
+
+coherences_jax = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in jax_results])
+
+coherences_numba = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in numba_results])
+print(coherences_jax.shape)
+
+distance = jnp.linalg.norm(coherences_jax - coherences_numba, axis=1)
+print(distance)
+```
+
+### 5. Transfer function
+```{python}
+transfer_jax = np.abs(jax_results[0].pxy) / jax_results[0].pxx
+transfer_numba = np.abs(numba_results[0].pxy) / numba_results[0].pxx
+
+fig = go.Figure()
+fig.add_scattergl(x=jax_results[0].f, y=transfer_jax, name="jax")
+fig.add_scattergl(x=numba_results[0].f, y=transfer_numba, name="numba")
+fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
+fig.update_yaxes(title_text="$H_{xy}$")
+fig.show()
+```
+

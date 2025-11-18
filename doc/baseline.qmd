@@ -19,6 +19,9 @@ Here we what to compare the jax punit model with the model written in numba from
 
 ### 2.Baseline Rate
 ```{python}
+from dataclasses import dataclass, field
+from time import time
+
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
@@ -29,71 +32,145 @@ import plotly.graph_objects as go
 from punit_numba import simulate as simulate_numba
 
 import jaxon.models.punit as punit
-from jaxon.analyze.baseline import interval_statistics
+from jaxon.analyze.baseline import (
+    cyclic_rate,
+    interval_statistics,
+    serial_correlations,
+    vector_strength,
+)
 from jaxon.dsp.kernels import gauss_kernel
 from jaxon.dsp.rate import spike_rate
 from jaxon.utils.output import to_spikes_times
+
+
+@dataclass()
+class Result:
+    jax_or_numba: str
+    cell_id: str
+    rates: float
+    cv: float
+    isis: jnp.ndarray
+    kde_isis: jnp.ndarray
+    lags: jnp.ndarray
+    corrs: jnp.ndarray
+    corrs_null: jnp.ndarray
+    vs: float
+    cphase: jnp.ndarray
+    crate: jnp.ndarray
+    calcultion_time: float
+
 
 simulate = jax.jit(punit.simulate_spikes)
 calc_rate = jax.jit(spike_rate)
 # Path to model parameters
 model_path = "../jaxon/models/parameters_punits.csv"
 models: pd.DataFrame = pd.read_csv(model_path)
-duration = 15
+duration = 5
+max_lag = 15
+
 fs = 20_000
-time = jnp.arange(0, 15, 1 / fs)
+t = jnp.arange(0, duration, 1 / fs)
 kernel = gauss_kernel(0.001, 1 / fs, 4)
 key = jax.random.PRNGKey(42)
 keys = jax.random.split(key, models.shape[0])
-rates = np.zeros(models.shape[0])
-rates_numba = np.zeros(models.shape[0])
-
-# isis_jax = np.zeros(models.shape[0])
-# isis_numba = np.zeros(models.shape[0])
-cv_jax = np.zeros(models.shape[0])
-cv_numba = np.zeros(models.shape[0])
+jax_results: list[Result] = []
+numba_results: list[Result] = []
 
 for i, model in enumerate(models.iterrows()):
     params = model[1]
     cell = params.pop("cell")
+    print(f"Processing {cell}")
     eodf = params.pop("EODf")
 
     eod_period = 1 / eodf
     max_eods = 15.5
 
     punit_params = punit.PUnitParams(**params)
-    baseline = jnp.sin(2 * jnp.pi * eodf * time)
-    baseline_numba = np.sin(2 * np.pi * eodf * time)
+    baseline = jnp.sin(2 * jnp.pi * eodf * t)
 
+    # JAX
+    start_time = time()
     spikes = simulate(keys[model[0]], baseline, punit_params)
     spike_times = to_spikes_times(spikes, fs)
 
-    spikes_numba = simulate_numba(baseline_numba, **params)
-    bin_spikes = np.zeros_like(time)
-    spike_idx = np.round(spikes_numba * fs).astype(int)
-    spike_idx = np.clip(spike_idx, 0, len(time) - 1)
+    rates_jax = jnp.mean(calc_rate(spikes, kernel))
 
-    bin_spikes[spike_idx] = 1
-
-    rates[i] = jnp.mean(calc_rate(spikes, kernel))
-    rates_numba[i] = jnp.mean(calc_rate(jnp.array(bin_spikes), kernel))
-
-    isis_jax, kde_jax, rate_jax, cv_jax[i] = interval_statistics(
+    isis_jax, kde_jax, rate_jax, cv_jax = interval_statistics(
         spike_times, sigma=0.05 * eod_period, maxisi=max_eods * eod_period
     )
-    isis_numba, kde_numba, rate_numba, cv_numba[i] = interval_statistics(
+    lags_jax, corrs_jax, corrs_null_jax = serial_correlations(spike_times, max_lag=max_lag)
+    vs_jax = vector_strength(spike_times, eod_period)
+    cphase_jax, crate_jax = cyclic_rate(spike_times, eod_period, sigma=0.02)
+    stop_time = time()
+    jax_res = Result(
+        jax_or_numba="jax",
+        cell_id=cell,
+        rates=rates_jax,
+        cv=cv_jax,
+        isis=isis_jax,
+        kde_isis=kde_jax,
+        lags=lags_jax,
+        corrs=corrs_jax,
+        corrs_null=corrs_null_jax,
+        vs=vs_jax,
+        cphase=cphase_jax,
+        crate=crate_jax,
+        calcultion_time=stop_time - start_time,
+    )
+    jax_results.append(jax_res)
+    print(f"Jax calculations {stop_time - start_time}")
+
+    # Numba
+    start_time = time()
+    baseline_numba = np.sin(2 * np.pi * eodf * t)
+    spikes_numba = simulate_numba(baseline_numba, **params)
+    bin_spikes = np.zeros_like(t)
+    spike_idx = np.round(spikes_numba * fs).astype(int)
+    spike_idx = np.clip(spike_idx, 0, len(t) - 1)
+    bin_spikes[spike_idx] = 1
+
+    rates_numba = jnp.mean(calc_rate(jnp.array(bin_spikes), kernel))
+
+    isis_numba, kde_numba, rate_numba, cv_numba = interval_statistics(
         spikes_numba, sigma=0.05 * eod_period, maxisi=max_eods * eod_period
     )
+    lags_numba, corrs_numba, corrs_null_numba = serial_correlations(spikes_numba, max_lag=max_lag)
+    vs_numba = vector_strength(spikes_numba, eod_period)
+    cphase_numba, crate_numba = cyclic_rate(spikes_numba, eod_period, sigma=0.02)
+
+    stop_time = time()
+    numba_res = Result(
+        jax_or_numba="numba",
+        cell_id=cell,
+        rates=rates_numba,
+        cv=cv_numba,
+        isis=isis_numba,
+        kde_isis=kde_numba,
+        lags=lags_numba,
+        corrs=corrs_numba,
+        corrs_null=corrs_null_numba,
+        vs=vs_numba,
+        cphase=cphase_numba,
+        crate=crate_numba,
+        calcultion_time=stop_time - start_time,
+    )
+    numba_results.append(numba_res)
+    print(f"Numba calculations {stop_time - start_time}")
 ```
+### 3. Rate
 ```{python}
+rates_jax = np.array([res.rates for res in jax_results])
+rates_numba = np.array([res.rates for res in numba_results])
+
 fig = go.Figure()
-fig.add_histogram(
-    x=np.abs(rates_numba - rates),
-)
+fig.add_histogram(x=np.abs(rates_numba - rates_jax))
 fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
 fig.show()
 ```
+### 4. CV
 ```{python}
+cv_jax = np.array([res.cv for res in jax_results])
+cv_numba = np.array([res.cv for res in numba_results])
 fig = go.Figure()
 fig.add_histogram(
     x=np.abs(cv_jax - cv_numba),
@@ -101,16 +178,42 @@ fig.add_histogram(
 fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
 fig.show()
 ```
+### 5. Spike Intervall
 
 ```{python}
 fig = go.Figure()
 fig.add_scattergl(
-    x=isis_jax,
-    y=kde_jax,
+    x=isis_jax * 1000,
+    y=kde_jax / 1000,
 )
 fig.add_scattergl(
-    x=isis_numba,
-    y=kde_numba,
+    x=isis_numba * 1000,
+    y=kde_numba / 1000,
+)
+fig.show()
+```
+
+### 6. Cyclic rate
+
+```{python}
+print(f"Vector strength JAX {jax_results[0].vs:.2f}")
+print(f"Vector strength numba {numba_results[0].vs:.2f}")
+fig = go.Figure()
+fig.add_scatterpolar(
+    r=jax_results[0].crate, theta=jax_results[0].cphase * (180 / np.pi), name="JAX"
+)
+fig.add_scatterpolar(
+    r=numba_results[0].crate, theta=numba_results[0].cphase * (180 / np.pi), name="Numba"
+)
+fig.update_traces(fill="toself")
+all_r_values = np.concatenate([jax_results[0].crate, numba_results[0].crate])
+min_val = np.min(all_r_values)
+max_val = np.max(all_r_values)
+fig.update_layout(
+    polar=dict(
+        angularaxis=dict(thetaunit="radians", dtick=np.pi / 4),
+        radialaxis=dict(range=[min_val, max_val]),
+    )
 )
 fig.show()
 ```
