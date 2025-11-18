@@ -69,9 +69,6 @@ def interval_statistics(
     spikes : ArrayLike
         Binary spike train.
 
-    fs : int
-        Sampling frequency
-
     sigma : float
         Standard deviation of Gaussian kernel used for for kde
         of interspike intervals. Same unit as `spikes`.
