@@ -61,9 +61,12 @@ website:
             - api/models.punit.qmd
           
         - section: stimuli
-
           contents:
-            - api/stimuli.whitenoise.qmd
+            - api/stimuli.noise.qmd
+        - section: analyze
+          contents:
+            - api/analyze.baseline.qmd
+            - api/analyze.spectral.qmd
 
 quartodoc:
   package: jaxon
@@ -83,7 +86,12 @@ quartodoc:
     - title: stimulus
       desc: Stimuli functions
       contents:
-        - stimuli.whitenoise
+        - stimuli.noise
+    - title: analyze
+      desc: Anylyze functions
+      contents:
+        - analyze.baseline
+        - analyze.spectral
 
 execute:
   freeze: auto
