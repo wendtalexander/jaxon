@@ -1,16 +1,5 @@
 ---
 title: "Introduction to JAX"
-format:
-  html:
-    toc: true
-    css: styles.css
-    toc-title: Contents
-    code-block-bg: true
-    code-block-border-left: "#31BAE9"
-    code-line-numbers: true
-    highlight-style: atom-one
-    link-external-icon: true
-    link-external-newwindow: true
 ---
 
 This is a quick tutorial on JAX that get you started. JAX can be thought of a
@@ -109,6 +98,7 @@ def multiplication_jitted(a: ArrayLike, b: ArrayLike) -> jax.Array:
 
 
 res = multiplication_jitted(arr1, arr2)
+res1 = jitted_fuc(arr1, arr2)
 ```
 
 :::{.callout-warning}

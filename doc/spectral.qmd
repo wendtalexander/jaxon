@@ -1,17 +1,5 @@
 ---
 title: "Spectral comparision"
-format:
-  html:
-    toc: true
-    css: styles.css
-    toc-title: Contents
-    code-block-bg: true
-    code-block-border-left: "#31BAE9"
-    code-line-numbers: true
-    highlight-style: atom-one
-    link-external-icon: true
-    link-external-newwindow: true
-    eqn-number: true
 ---
 
 ### 1. Motivation
@@ -69,8 +57,9 @@ numba_results: list[Result] = []
 
 for i, model in enumerate(models.iterrows()):
     params = model[1]
+    print(model[1].to_dict())
+  
     cell = params.pop("cell")
-    print(f"Processing {cell}")
     eodf = params.pop("EODf")
     white_noise = whitenoise(
         keys[0, i],
@@ -85,17 +74,13 @@ for i, model in enumerate(models.iterrows()):
     stimulus = baseline + (baseline * (white_noise * contrast))
 
     # JAX
-    start_time = time()
     spikes = simulate(keys[1, i], stimulus, punit_params)
     f, pyy, pxx, pxy = spectra(spikes=spikes, stimulus=white_noise, fs=fs, nfft=nfft)
     coherence = (np.abs(pxy) ** 2) / (pyy * pxx)
-    stop_time = time()
     jax_res = Result(jax_or_numba="jax", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)
     jax_results.append(jax_res)
-    print(f"Jax calculations {stop_time - start_time}")
 
     # Numba
-    start_time = time()
     spikes_numba = simulate_numba(np.array(stimulus), **params)
     bin_spikes = np.zeros_like(t)
     spike_idx = np.round(spikes_numba * fs).astype(int)
@@ -103,57 +88,104 @@ for i, model in enumerate(models.iterrows()):
     bin_spikes[spike_idx] = 1
     f, pyy, pxx, pxy = spectra(spikes=bin_spikes, stimulus=white_noise, fs=fs, nfft=nfft)
     coherence = (np.abs(pxy) ** 2) / (pyy * pxx)
-    stop_time = time()
     numba_res = Result(jax_or_numba="numba", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)
     numba_results.append(numba_res)
-    print(f"Numba calculations {stop_time - start_time}")
+    break
 ```
 ### 3. Spectra
 ```{python}
+# | output: false
 fig = go.Figure()
 fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pyy, name="Stimulus")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{yy}$", type="log", range=[-9, -2])
-fig.show()
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
 
+```{python}
+# | output: false
 fig = go.Figure()
 fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pxx, name="jax")
 fig.add_scattergl(x=numba_results[0].f, y=numba_results[0].pxx, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{xx}$", type="log", range=[-9, -2])
-fig.show()
-
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
+```{python}
+# | output: false
 fig = go.Figure()
 fig.add_scattergl(x=jax_results[0].f, y=np.abs(jax_results[0].pxy), name="jax")
 fig.add_scattergl(x=numba_results[0].f, y=np.abs(numba_results[0].pxy), name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{xy}$", type="log", range=[-9, -2])
-fig.show()
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 
 ### 4. Coherence
 ```{python}
+# | output: false
 coherence_jax = np.abs(jax_results[0].pxy) ** 2 / (jax_results[0].pxx * jax_results[0].pyy)
-
 coherence_numba = np.abs(numba_results[0].pxy) ** 2 / (numba_results[0].pxx * numba_results[0].pyy)
+
 fig = go.Figure()
 fig.add_scattergl(x=jax_results[0].f, y=coherence_jax, name="jax")
 fig.add_scattergl(x=numba_results[0].f, y=coherence_numba, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
 fig.update_yaxes(title_text="$C_{xy}$", range=[0, 1])
-fig.show()
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
 
+```{python}
+
+# | output: false
 coherences_jax = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in jax_results])
-
 coherences_numba = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in numba_results])
 print(coherences_jax.shape)
-
 distance = jnp.linalg.norm(coherences_jax - coherences_numba, axis=1)
 print(distance)
+fig = go.Figure()
+fig.add_histogram(y=distance)
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 
 ### 5. Transfer function
 ```{python}
+# | output: false
 transfer_jax = np.abs(jax_results[0].pxy) / jax_results[0].pxx
 transfer_numba = np.abs(numba_results[0].pxy) / numba_results[0].pxx
 
@@ -163,5 +195,13 @@ fig.add_scattergl(x=numba_results[0].f, y=transfer_numba, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
 fig.update_yaxes(title_text="$H_{xy}$")
 fig.show()
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 

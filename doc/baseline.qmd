@@ -1,17 +1,5 @@
 ---
 title: "Baseline comparision"
-format:
-  html:
-    toc: true
-    css: styles.css
-    toc-title: Contents
-    code-block-bg: true
-    code-block-border-left: "#31BAE9"
-    code-line-numbers: true
-    highlight-style: atom-one
-    link-external-icon: true
-    link-external-newwindow: true
-    eqn-number: true
 ---
 
 ### 1. Motivation
@@ -57,7 +45,6 @@ class Result:
     vs: float
     cphase: jnp.ndarray
     crate: jnp.ndarray
-    calcultion_time: float
 
 
 simulate = jax.jit(punit.simulate_spikes)
@@ -80,7 +67,6 @@ numba_results: list[Result] = []
 for i, model in enumerate(models.iterrows()):
     params = model[1]
     cell = params.pop("cell")
-    print(f"Processing {cell}")
     eodf = params.pop("EODf")
 
     eod_period = 1 / eodf
@@ -102,7 +88,6 @@ for i, model in enumerate(models.iterrows()):
     lags_jax, corrs_jax, corrs_null_jax = serial_correlations(spike_times, max_lag=max_lag)
     vs_jax = vector_strength(spike_times, eod_period)
     cphase_jax, crate_jax = cyclic_rate(spike_times, eod_period, sigma=0.02)
-    stop_time = time()
     jax_res = Result(
         jax_or_numba="jax",
         cell_id=cell,
@@ -116,13 +101,10 @@ for i, model in enumerate(models.iterrows()):
         vs=vs_jax,
         cphase=cphase_jax,
         crate=crate_jax,
-        calcultion_time=stop_time - start_time,
     )
     jax_results.append(jax_res)
-    print(f"Jax calculations {stop_time - start_time}")
 
     # Numba
-    start_time = time()
     baseline_numba = np.sin(2 * np.pi * eodf * t)
     spikes_numba = simulate_numba(baseline_numba, **params)
     bin_spikes = np.zeros_like(t)
@@ -139,7 +121,6 @@ for i, model in enumerate(models.iterrows()):
     vs_numba = vector_strength(spikes_numba, eod_period)
     cphase_numba, crate_numba = cyclic_rate(spikes_numba, eod_period, sigma=0.02)
 
-    stop_time = time()
     numba_res = Result(
         jax_or_numba="numba",
         cell_id=cell,
@@ -153,23 +134,32 @@ for i, model in enumerate(models.iterrows()):
         vs=vs_numba,
         cphase=cphase_numba,
         crate=crate_numba,
-        calcultion_time=stop_time - start_time,
     )
     numba_results.append(numba_res)
-    print(f"Numba calculations {stop_time - start_time}")
+    break
 ```
 ### 3. Rate
 ```{python}
+# | output: false
 rates_jax = np.array([res.rates for res in jax_results])
 rates_numba = np.array([res.rates for res in numba_results])
-
 fig = go.Figure()
 fig.add_histogram(x=np.abs(rates_numba - rates_jax))
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
 fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
-fig.show()
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
+```{python}
 ```
 ### 4. CV
 ```{python}
+# | output: false
 cv_jax = np.array([res.cv for res in jax_results])
 cv_numba = np.array([res.cv for res in numba_results])
 fig = go.Figure()
@@ -177,11 +167,17 @@ fig.add_histogram(
     x=np.abs(cv_jax - cv_numba),
 )
 fig.update_layout(xaxis_title="Absolute differences between jaxon and numba", yaxis_title="Models")
-fig.show()
 ```
-### 5. Spike Intervall
+```{python}
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
 
 ```{python}
+# | output: false
 fig = go.Figure()
 fig.add_scattergl(
     x=isis_jax * 1000,
@@ -191,14 +187,20 @@ fig.add_scattergl(
     x=isis_numba * 1000,
     y=kde_numba / 1000,
 )
-fig.show()
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 
 ### 6. Cyclic rate
 
 ```{python}
-print(f"Vector strength JAX {jax_results[0].vs:.2f}")
-print(f"Vector strength numba {numba_results[0].vs:.2f}")
+# | output: false
 fig = go.Figure()
 fig.add_scatterpolar(
     r=jax_results[0].crate, theta=jax_results[0].cphase * (180 / np.pi), name="JAX"
@@ -216,5 +218,16 @@ fig.update_layout(
         radialaxis=dict(range=[min_val, max_val]),
     )
 )
-fig.show()
+print(f"Vector strength JAX {jax_results[0].vs:.2f}")
+print(f"Vector strength numba {numba_results[0].vs:.2f}")
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+print(f"Vector strength JAX {jax_results[0].vs:.2f}")
+print(f"Vector strength numba {numba_results[0].vs:.2f}")
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```

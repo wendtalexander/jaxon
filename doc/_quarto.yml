@@ -23,11 +23,19 @@ format:
       margin-width: 300px
       gutter-width: 1.5rem
 
+    toc: true
+    toc-title: Contents
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-line-numbers: true
+    highlight-style: github
+    link-external-icon: true
+    link-external-newwindow: true
+    eqn-number: true
+
 website:
   title: "jAxon"
   favicon: favicon.png
-  # navbar:
-  #   right:
   sidebar:
     title: false
     logo: logo.png
@@ -46,10 +54,12 @@ website:
         - lif.qmd
         - alif.qmd
         - adex.qmd
-      - section: "P-Unit model"
+        - punit.qmd
+      - section: "P-Unit model comparison"
         contents:
         - baseline.qmd
         - spectral.qmd
+        - performance.qmd
       - section: "API"
         href: "api/index.qmd"
         contents:
@@ -59,7 +69,6 @@ website:
             - api/models.adex.qmd
             - api/models.alif.qmd
             - api/models.punit.qmd
-          
         - section: stimuli
           contents:
             - api/stimuli.noise.qmd

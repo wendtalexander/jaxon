@@ -1,16 +1,5 @@
 ---
 title: "Leaky-Integrated-and-Fire-Model (LIF)"
-format:
-  html:
-    toc: true
-    css: styles.css
-    toc-title: Contents
-    code-block-bg: true
-    code-block-border-left: "#31BAE9"
-    code-line-numbers: true
-    highlight-style: atom-one
-    link-external-icon: true
-    link-external-newwindow: true
 ---
 
 ## 1. Motivation

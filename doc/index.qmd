@@ -1,14 +1,5 @@
 ---
 title: "Welcome to jAxon"
-format:
-  html:
-    toc: true
-    css: styles.css
-    toc-title: Contents
-    code-block-bg: true
-    code-block-border-left: "#31BAE9"
-    link-external-icon: true
-    link-external-newwindow: true
 ---
 
 ## Motivation
