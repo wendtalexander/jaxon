@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 documentation = []
 docs = [
+    "joblib>=1.5.2",
     "jupyterlab>=4.4.7",
     "matplotlib>=3.10.6",
     "numba>=0.62.1",
