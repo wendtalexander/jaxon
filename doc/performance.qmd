@@ -1,0 +1,134 @@
+---
+title: Performance
+---
+
+### Performance P-Unit numba version vs Jaxon
+
+```{python}
+import jax
+import jax.numpy as jnp
+import jax.scipy as jsp
+import numpy as np
+from joblib import Parallel, delayed
+from punit_numba import simulate
+from scipy.signal import welch
+
+import jaxon.models.punit as punit
+from jaxon.dsp.kernels import gauss_kernel
+from jaxon.dsp.rate import spike_rate
+
+# parameters for P-Unit model
+punit_params = {
+    "cell": "2010-11-08-al-invivo-1",
+    "EODf": 744.66,
+    "a_zero": 9.450855200303527,
+    "delta_a": 0.0604984400793618,
+    "dend_tau": 0.0007742334994649,
+    "input_scaling": 31.363843698084207,
+    "mem_tau": 0.0017257848281706,
+    "noise_strength": 0.0124091008125932,
+    "ref_period": 0.0010273077926126,
+    "deltat": 5e-05,
+    "tau_a": 0.1022386553157565,
+    "threshold": 1,
+    "v_base": 0,
+    "v_offset": -0.390625,
+    "v_zero": 0,
+}
+cell = punit_params.pop("cell")
+eodf = punit_params.pop("EODf")
+
+params = punit.PUnitParams(**punit_params)
+
+sigma = 0.007
+ktime = 4
+fs = 1 / params.deltat
+duration = 10
+trials = 2000
+# first generate a random key for the LIF model
+key = jax.random.PRNGKey(42)
+keys = jax.random.split(key, trials)
+time = jnp.arange(0, duration, 1 / fs)
+stimulus = jnp.cos(2 * jnp.pi * eodf * time)
+stimulus_numba = np.cos(2 * jnp.pi * eodf * time)
+
+kernel = gauss_kernel(sigma, 1 / fs, ktime)
+# rate = spike_rate(binary_spikes, kernel)
+```
+
+```{python}
+%%timeit
+spikes = punit.simulate_spikes(key, stimulus, params)
+```
+
+```{python}
+stimulate_jax = jax.jit(punit.simulate_spikes)
+spikes = stimulate_jax(key, stimulus, params)
+```
+
+```{python}
+%%timeit
+spikes = stimulate_jax(key, stimulus, params)
+```
+
+```{python}
+stimulate_jax = jax.vmap(jax.jit(punit.simulate_spikes), in_axes=[0, None, None])
+spikes = stimulate_jax(keys[:3], stimulus, params)
+```
+
+```{python}
+%%timeit
+spikes = stimulate_jax(keys, stimulus, params)
+```
+
+```{python}
+spikes = simulate(stimulus_numba, **punit_params)
+```
+
+```{python}
+%%timeit
+spikes = simulate(stimulus_numba, **punit_params)
+```
+
+```{python}
+%%timeit
+for _ in range(trials):
+  spikes = simulate(stimulus_numba, **punit_params)
+```
+
+```{python}
+%%timeit
+spikes = Parallel(n_jobs=-1)(delayed(simulate)(stimulus_numba, **punit_params) for _ in range(trials))
+```
+
+```{python}
+def process_trial(stimulus: np.ndarray, params: dict) -> np.ndarray:
+    spikes = simulate(stimulus_numba, **params)
+    bin_spikes = np.zeros_like(stimulus)
+    spike_times = np.round(spikes * 1 / params["deltat"]).astype(int)
+    spike_times = np.clip(spike_times, 0, len(stimulus) - 1)
+    bin_spikes[spike_times] = 1
+    f, pxx = welch(bin_spikes, nperseg=2**14, fs=int(1 / params["deltat"]))
+    return pxx
+```
+
+```{python}
+%%timeit
+pxx= Parallel(n_jobs=-1)(delayed(process_trial)(stimulus_numba, punit_params) for _ in range(trials))
+```
+
+```{python}
+def process_trial_jax(bin_array, fs):
+    return jsp.signal.welch(bin_array, nperseg=2**14, fs=fs)
+
+
+calc_pxx = jax.vmap(jax.jit(process_trial_jax, static_argnums=[1]), in_axes=[0, None])
+```
+
+```{python}
+spikes = stimulate_jax(keys, stimulus, params)
+f, pxx = calc_pxx(spikes, fs)
+```
+
+
+
