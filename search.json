@@ -1,5 +1,27 @@
 [
   {
+    "objectID": "performance.html",
+    "href": "performance.html",
+    "title": "Performance",
+    "section": "",
+    "text": "Performance P-Unit numba version vs Jaxon\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\nimport numpy as np\nfrom joblib import Parallel, delayed\nfrom punit_numba import simulate\nfrom scipy.signal import welch\n\nimport jaxon.models.punit as punit\nfrom jaxon.dsp.kernels import gauss_kernel\nfrom jaxon.dsp.rate import spike_rate\n\n# parameters for P-Unit model\npunit_params = {\n    \"cell\": \"2010-11-08-al-invivo-1\",\n    \"EODf\": 744.66,\n    \"a_zero\": 9.450855200303527,\n    \"delta_a\": 0.0604984400793618,\n    \"dend_tau\": 0.0007742334994649,\n    \"input_scaling\": 31.363843698084207,\n    \"mem_tau\": 0.0017257848281706,\n    \"noise_strength\": 0.0124091008125932,\n    \"ref_period\": 0.0010273077926126,\n    \"deltat\": 5e-05,\n    \"tau_a\": 0.1022386553157565,\n    \"threshold\": 1,\n    \"v_base\": 0,\n    \"v_offset\": -0.390625,\n    \"v_zero\": 0,\n}\ncell = punit_params.pop(\"cell\")\neodf = punit_params.pop(\"EODf\")\n\nparams = punit.PUnitParams(**punit_params)\n\nsigma = 0.007\nktime = 4\nfs = 1 / params.deltat\nduration = 10\ntrials = 2000\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, trials)\ntime = jnp.arange(0, duration, 1 / fs)\nstimulus = jnp.cos(2 * jnp.pi * eodf * time)\nstimulus_numba = np.cos(2 * jnp.pi * eodf * time)\n\nkernel = gauss_kernel(sigma, 1 / fs, ktime)\n# rate = spike_rate(binary_spikes, kernel)\n\n\n%%timeit\nspikes = punit.simulate_spikes(key, stimulus, params)\n\n2.2 s ± 4.79 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\nstimulate_jax = jax.jit(punit.simulate_spikes)\nspikes = stimulate_jax(key, stimulus, params)\n\n\n%%timeit\nspikes = stimulate_jax(key, stimulus, params)\n\n1.07 s ± 2.22 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\nstimulate_jax = jax.vmap(jax.jit(punit.simulate_spikes), in_axes=[0, None, None])\nspikes = stimulate_jax(keys[:3], stimulus, params)\n\n\n%%timeit\nspikes = stimulate_jax(keys, stimulus, params)\n\n1.31 s ± 3.16 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\nspikes = simulate(stimulus_numba, **punit_params)\n\n\n%%timeit\nspikes = simulate(stimulus_numba, **punit_params)\n\n5.17 ms ± 7.87 μs per loop (mean ± std. dev. of 7 runs, 100 loops each)\n\n\n\n%%timeit\nfor _ in range(trials):\n  spikes = simulate(stimulus_numba, **punit_params)\n\n10.4 s ± 17.9 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\n%%timeit\nspikes = Parallel(n_jobs=-1)(delayed(simulate)(stimulus_numba, **punit_params) for _ in range(trials))\n\n926 ms ± 24.4 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\ndef process_trial(stimulus: np.ndarray, params: dict) -&gt; np.ndarray:\n    spikes = simulate(stimulus_numba, **params)\n    bin_spikes = np.zeros_like(stimulus)\n    spike_times = np.round(spikes * 1 / params[\"deltat\"]).astype(int)\n    spike_times = np.clip(spike_times, 0, len(stimulus) - 1)\n    bin_spikes[spike_times] = 1\n    f, pxx = welch(bin_spikes, nperseg=2**14, fs=int(1 / params[\"deltat\"]))\n    return pxx\n\n\n%%timeit\npxx= Parallel(n_jobs=-1)(delayed(process_trial)(stimulus_numba, punit_params) for _ in range(trials))\n\n1.67 s ± 11.1 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)\n\n\n\ndef process_trial_jax(bin_array, fs):\n    f, pxx = jsp.signal.welch(bin_array, nperseg=2**14, fs=fs)\n    return pxx\n\n\ncalc_pxx = jax.vmap(jax.jit(process_trial_jax, static_argnums=[1]), in_axes=[0, None])\n\n\n%%timeit\nspikes = stimulate_jax(keys, stimulus, params)\npxx = calc_pxx(spikes, fs)\n\n1.4 s ± 16.5 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)",
+    "crumbs": [
+      "P-Unit model comparison",
+      "Performance"
+    ]
+  },
+  {
+    "objectID": "spectral.html",
+    "href": "spectral.html",
+    "title": "Spectral comparision",
+    "section": "",
+    "text": "1. Motivation\nHere we what to compare the jax punit model with the model written in numba from the bendalab\n\n\n2. Data\n\nfrom dataclasses import dataclass, field\nfrom time import time\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\nimport numpy as np\nimport pandas as pd\nimport plotly.graph_objects as go\nfrom punit_numba import simulate as simulate_numba\n\nimport jaxon.models.punit as punit\nfrom jaxon.analyze.spectral import spectra\nfrom jaxon.dsp.kernels import gauss_kernel\nfrom jaxon.dsp.rate import spike_rate\nfrom jaxon.stimuli.noise import whitenoise\nfrom jaxon.utils.output import to_spikes_times\n\n\n@dataclass()\nclass Result:\n    jax_or_numba: str\n    cell_id: str\n    f: jnp.ndarray\n    pyy: jnp.ndarray\n    pxx: jnp.ndarray\n    pxy: jnp.ndarray\n\n\nsimulate = jax.jit(punit.simulate_spikes)\ncalc_rate = jax.jit(spike_rate)\n# Path to model parameters\nmodel_path = \"../jaxon/models/parameters_punits.csv\"\nmodels: pd.DataFrame = pd.read_csv(model_path)\n\nduration = 15\nfs = 20_000\ncflow = 0\ncfup = 300\ncontrast = 0.05\nnfft = 2**9\nt = jnp.arange(0, duration, 1 / fs)\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 2 * models.shape[0]).reshape(2, models.shape[0], -1)\njax_results: list[Result] = []\nnumba_results: list[Result] = []\n\nfor i, model in enumerate(models.iterrows()):\n    params = model[1]\n    print(model[1].to_dict())\n  \n    cell = params.pop(\"cell\")\n    eodf = params.pop(\"EODf\")\n    white_noise = whitenoise(\n        keys[0, i],\n        cflow=cflow,\n        cfup=cfup,\n        fs=fs,\n        duration=duration,\n    )\n\n    punit_params = punit.PUnitParams(**params)\n    baseline = jnp.sin(2 * jnp.pi * eodf * t)\n    stimulus = baseline + (baseline * (white_noise * contrast))\n\n    # JAX\n    spikes = simulate(keys[1, i], stimulus, punit_params)\n    f, pyy, pxx, pxy = spectra(spikes=spikes, stimulus=white_noise, fs=fs, nfft=nfft)\n    coherence = (np.abs(pxy) ** 2) / (pyy * pxx)\n    jax_res = Result(jax_or_numba=\"jax\", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)\n    jax_results.append(jax_res)\n\n    # Numba\n    spikes_numba = simulate_numba(np.array(stimulus), **params)\n    bin_spikes = np.zeros_like(t)\n    spike_idx = np.round(spikes_numba * fs).astype(int)\n    spike_idx = np.clip(spike_idx, 0, len(t) - 1)\n    bin_spikes[spike_idx] = 1\n    f, pyy, pxx, pxy = spectra(spikes=bin_spikes, stimulus=white_noise, fs=fs, nfft=nfft)\n    coherence = (np.abs(pxy) ** 2) / (pyy * pxx)\n    numba_res = Result(jax_or_numba=\"numba\", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)\n    numba_results.append(numba_res)\n    break\n\n{'cell': '2010-11-08-al-invivo-1', 'EODf': 744.66, 'a_zero': 9.450855200303527, 'delta_a': 0.0604984400793618, 'dend_tau': 0.0007742334994649, 'input_scaling': 31.363843698084207, 'mem_tau': 0.0017257848281706, 'noise_strength': 0.0124091008125932, 'ref_period': 0.0010273077926126, 'deltat': 5e-05, 'tau_a': 0.1022386553157565, 'threshold': 1, 'v_base': 0, 'v_offset': -0.390625, 'v_zero': 0}\n\n\n\n\n3. Spectra\n\nfig = go.Figure()\nfig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pyy, name=\"Stimulus\")\nfig.update_xaxes(title_text=\"f [Hz]\", range=[0, 1000])\nfig.update_yaxes(title_text=\"$P_{yy}$\", type=\"log\", range=[-9, -2])\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\nfig = go.Figure()\nfig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pxx, name=\"jax\")\nfig.add_scattergl(x=numba_results[0].f, y=numba_results[0].pxx, name=\"numba\")\nfig.update_xaxes(title_text=\"f [Hz]\", range=[0, 1000])\nfig.update_yaxes(title_text=\"$P_{xx}$\", type=\"log\", range=[-9, -2])\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\nfig = go.Figure()\nfig.add_scattergl(x=jax_results[0].f, y=np.abs(jax_results[0].pxy), name=\"jax\")\nfig.add_scattergl(x=numba_results[0].f, y=np.abs(numba_results[0].pxy), name=\"numba\")\nfig.update_xaxes(title_text=\"f [Hz]\", range=[0, 1000])\nfig.update_yaxes(title_text=\"$P_{xy}$\", type=\"log\", range=[-9, -2])\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n\n4. Coherence\n\ncoherence_jax = np.abs(jax_results[0].pxy) ** 2 / (jax_results[0].pxx * jax_results[0].pyy)\ncoherence_numba = np.abs(numba_results[0].pxy) ** 2 / (numba_results[0].pxx * numba_results[0].pyy)\n\nfig = go.Figure()\nfig.add_scattergl(x=jax_results[0].f, y=coherence_jax, name=\"jax\")\nfig.add_scattergl(x=numba_results[0].f, y=coherence_numba, name=\"numba\")\nfig.update_xaxes(title_text=\"f [Hz]\", range=[0, 300])\nfig.update_yaxes(title_text=\"$C_{xy}$\", range=[0, 1])\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\ncoherences_jax = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in jax_results])\ncoherences_numba = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in numba_results])\nprint(coherences_jax.shape)\ndistance = jnp.linalg.norm(coherences_jax - coherences_numba, axis=1)\nprint(distance)\nfig = go.Figure()\nfig.add_histogram(y=distance)\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n\n5. Transfer function\n\ntransfer_jax = np.abs(jax_results[0].pxy) / jax_results[0].pxx\ntransfer_numba = np.abs(numba_results[0].pxy) / numba_results[0].pxx\n\nfig = go.Figure()\nfig.add_scattergl(x=jax_results[0].f, y=transfer_jax, name=\"jax\")\nfig.add_scattergl(x=numba_results[0].f, y=transfer_numba, name=\"numba\")\nfig.update_xaxes(title_text=\"f [Hz]\", range=[0, 300])\nfig.update_yaxes(title_text=\"$H_{xy}$\")\nfig.show()",
+    "crumbs": [
+      "P-Unit model comparison",
+      "Spectral comparision"
+    ]
+  },
+  {
     "objectID": "lif.html",
     "href": "lif.html",
     "title": "Leaky-Integrated-and-Fire-Model (LIF)",
@@ -44,162 +66,14 @@
     ]
   },
   {
-    "objectID": "api/models.adex.html",
-    "href": "api/models.adex.html",
-    "title": "models.adex",
+    "objectID": "baseline.html",
+    "href": "baseline.html",
+    "title": "Baseline comparision",
     "section": "",
-    "text": "models.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nName\nDescription\n\n\n\n\nAdExParams\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nmodels.adex.AdExParams(\n    fs,\n    tau_mem,\n    v_base,\n    threshold,\n    exp_threshold,\n    exp_deltat,\n    tau_adapt,\n    deltat_adapt,\n    a,\n    b,\n    ref_period,\n    noise_strength,\n)\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nfs : int\n\nSampling frequency.\n\ntau_mem : float\n\nMembrane time constant.\n\nv_base : float\n\nReset potential after a spike.\n\nthreshold : float\n\nSpike detection threshold.\n\nexp_threshold : float\n\nExponential spike-initiation voltage.\n\nexp_deltat : float\n\nSharpness of the exponential spike initiation.\n\ntau_adapt : float\n\nAdaptation time constant.\n\ndeltat_adapt : float\n\nAdaptation integration timestep.\n\na : float\n\nSubthreshold adaptation coupling .\n\nb : float\n\nSpike-triggered adaptation increment.\n\nref_period : float\n\nAbsolute refractory period (ms).\n\nnoise_strength : float\n\nNoise std dev added to the membrane input.\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.adex.simulate(key, stimulus, params)\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput current\n\nparams : AdExParams class\n\nparameter\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.adex.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.adex.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nparameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "text": "1. Motivation\nHere we what to compare the jax punit model with the model written in numba from the bendalab\n\n\n2.Baseline Rate\n\nfrom dataclasses import dataclass, field\nfrom time import time\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\nimport numpy as np\nimport pandas as pd\nimport plotly.express as px\nimport plotly.graph_objects as go\nfrom punit_numba import simulate as simulate_numba\n\nimport jaxon.models.punit as punit\nfrom jaxon.analyze.baseline import (\n    cyclic_rate,\n    interval_statistics,\n    serial_correlations,\n    vector_strength,\n)\nfrom jaxon.dsp.kernels import gauss_kernel\nfrom jaxon.dsp.rate import spike_rate\nfrom jaxon.utils.output import to_spikes_times\n\n\n@dataclass()\nclass Result:\n    jax_or_numba: str\n    cell_id: str\n    rates: float\n    cv: float\n    isis: jnp.ndarray\n    kde_isis: jnp.ndarray\n    lags: jnp.ndarray\n    corrs: jnp.ndarray\n    corrs_null: jnp.ndarray\n    vs: float\n    cphase: jnp.ndarray\n    crate: jnp.ndarray\n\n\nsimulate = jax.jit(punit.simulate_spikes)\ncalc_rate = jax.jit(spike_rate)\n# Path to model parameters\nmodel_path = \"../jaxon/models/parameters_punits.csv\"\nmodels: pd.DataFrame = pd.read_csv(model_path)\n\nduration = 5\nmax_lag = 15\nfs = 20_000\n\nt = jnp.arange(0, duration, 1 / fs)\nkernel = gauss_kernel(0.001, 1 / fs, 4)\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, models.shape[0])\njax_results: list[Result] = []\nnumba_results: list[Result] = []\n\nfor i, model in enumerate(models.iterrows()):\n    params = model[1]\n    cell = params.pop(\"cell\")\n    eodf = params.pop(\"EODf\")\n\n    eod_period = 1 / eodf\n    max_eods = 15.5\n\n    punit_params = punit.PUnitParams(**params)\n    baseline = jnp.sin(2 * jnp.pi * eodf * t)\n\n    # JAX\n    start_time = time()\n    spikes = simulate(keys[model[0]], baseline, punit_params)\n    spike_times = to_spikes_times(spikes, fs)\n\n    rates_jax = jnp.mean(calc_rate(spikes, kernel))\n\n    isis_jax, kde_jax, rate_jax, cv_jax = interval_statistics(\n        spike_times, sigma=0.05 * eod_period, maxisi=max_eods * eod_period\n    )\n    lags_jax, corrs_jax, corrs_null_jax = serial_correlations(spike_times, max_lag=max_lag)\n    vs_jax = vector_strength(spike_times, eod_period)\n    cphase_jax, crate_jax = cyclic_rate(spike_times, eod_period, sigma=0.02)\n    jax_res = Result(\n        jax_or_numba=\"jax\",\n        cell_id=cell,\n        rates=rates_jax,\n        cv=cv_jax,\n        isis=isis_jax,\n        kde_isis=kde_jax,\n        lags=lags_jax,\n        corrs=corrs_jax,\n        corrs_null=corrs_null_jax,\n        vs=vs_jax,\n        cphase=cphase_jax,\n        crate=crate_jax,\n    )\n    jax_results.append(jax_res)\n\n    # Numba\n    baseline_numba = np.sin(2 * np.pi * eodf * t)\n    spikes_numba = simulate_numba(baseline_numba, **params)\n    bin_spikes = np.zeros_like(t)\n    spike_idx = np.round(spikes_numba * fs).astype(int)\n    spike_idx = np.clip(spike_idx, 0, len(t) - 1)\n    bin_spikes[spike_idx] = 1\n\n    rates_numba = jnp.mean(calc_rate(jnp.array(bin_spikes), kernel))\n\n    isis_numba, kde_numba, rate_numba, cv_numba = interval_statistics(\n        spikes_numba, sigma=0.05 * eod_period, maxisi=max_eods * eod_period\n    )\n    lags_numba, corrs_numba, corrs_null_numba = serial_correlations(spikes_numba, max_lag=max_lag)\n    vs_numba = vector_strength(spikes_numba, eod_period)\n    cphase_numba, crate_numba = cyclic_rate(spikes_numba, eod_period, sigma=0.02)\n\n    numba_res = Result(\n        jax_or_numba=\"numba\",\n        cell_id=cell,\n        rates=rates_numba,\n        cv=cv_numba,\n        isis=isis_numba,\n        kde_isis=kde_numba,\n        lags=lags_numba,\n        corrs=corrs_numba,\n        corrs_null=corrs_null_numba,\n        vs=vs_numba,\n        cphase=cphase_numba,\n        crate=crate_numba,\n    )\n    numba_results.append(numba_res)\n    break\n\n\n\n3. Rate\n\nrates_jax = np.array([res.rates for res in jax_results])\nrates_numba = np.array([res.rates for res in numba_results])\nfig = go.Figure()\nfig.add_histogram(x=np.abs(rates_numba - rates_jax))\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n\n4. CV\n\ncv_jax = np.array([res.cv for res in jax_results])\ncv_numba = np.array([res.cv for res in numba_results])\nfig = go.Figure()\nfig.add_histogram(\n    x=np.abs(cv_jax - cv_numba),\n)\nfig.update_layout(xaxis_title=\"Absolute differences between jaxon and numba\", yaxis_title=\"Models\")\n\n\nfig.update_layout(template=\"plotly_white\")\ndisplay(fig)\nfig.update_layout(template=\"plotly_dark\")\ndisplay(fig)\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\nfig = go.Figure()\nfig.add_scattergl(\n    x=isis_jax * 1000,\n    y=kde_jax / 1000,\n)\nfig.add_scattergl(\n    x=isis_numba * 1000,\n    y=kde_numba / 1000,\n)\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n\n6. Cyclic rate\n\nfig = go.Figure()\nfig.add_scatterpolar(\n    r=jax_results[0].crate, theta=jax_results[0].cphase * (180 / np.pi), name=\"JAX\"\n)\nfig.add_scatterpolar(\n    r=numba_results[0].crate, theta=numba_results[0].cphase * (180 / np.pi), name=\"Numba\"\n)\nfig.update_traces(fill=\"toself\")\nall_r_values = np.concatenate([jax_results[0].crate, numba_results[0].crate])\nmin_val = np.min(all_r_values)\nmax_val = np.max(all_r_values)\nfig.update_layout(\n    polar=dict(\n        angularaxis=dict(thetaunit=\"radians\", dtick=np.pi / 4),\n        radialaxis=dict(range=[min_val, max_val]),\n    )\n)\nprint(f\"Vector strength JAX {jax_results[0].vs:.2f}\")\nprint(f\"Vector strength numba {numba_results[0].vs:.2f}\")\n\n\n\nVector strength JAX 0.92\nVector strength numba 0.92",
     "crumbs": [
-      "API",
-      "models",
-      "models.adex"
-    ]
-  },
-  {
-    "objectID": "api/models.adex.html#classes",
-    "href": "api/models.adex.html#classes",
-    "title": "models.adex",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nAdExParams\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nmodels.adex.AdExParams(\n    fs,\n    tau_mem,\n    v_base,\n    threshold,\n    exp_threshold,\n    exp_deltat,\n    tau_adapt,\n    deltat_adapt,\n    a,\n    b,\n    ref_period,\n    noise_strength,\n)\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nfs : int\n\nSampling frequency.\n\ntau_mem : float\n\nMembrane time constant.\n\nv_base : float\n\nReset potential after a spike.\n\nthreshold : float\n\nSpike detection threshold.\n\nexp_threshold : float\n\nExponential spike-initiation voltage.\n\nexp_deltat : float\n\nSharpness of the exponential spike initiation.\n\ntau_adapt : float\n\nAdaptation time constant.\n\ndeltat_adapt : float\n\nAdaptation integration timestep.\n\na : float\n\nSubthreshold adaptation coupling .\n\nb : float\n\nSpike-triggered adaptation increment.\n\nref_period : float\n\nAbsolute refractory period (ms).\n\nnoise_strength : float\n\nNoise std dev added to the membrane input.",
-    "crumbs": [
-      "API",
-      "models",
-      "models.adex"
-    ]
-  },
-  {
-    "objectID": "api/models.adex.html#functions",
-    "href": "api/models.adex.html#functions",
-    "title": "models.adex",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.adex.simulate(key, stimulus, params)\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput current\n\nparams : AdExParams class\n\nparameter\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.adex.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.adex.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nparameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
-    "crumbs": [
-      "API",
-      "models",
-      "models.adex"
-    ]
-  },
-  {
-    "objectID": "api/models.punit.html",
-    "href": "api/models.punit.html",
-    "title": "models.punit",
-    "section": "",
-    "text": "models.punit\n\n\n\n\n\nName\nDescription\n\n\n\n\nPUnitParams\nParameter class for p-unit model\n\n\n\n\n\nmodels.punit.PUnitParams(\n    a_zero,\n    delta_a,\n    deltat,\n    dend_tau,\n    input_scaling,\n    mem_tau,\n    noise_strength,\n    ref_period,\n    tau_a,\n    threshold,\n    v_base,\n    v_offset,\n    v_zero,\n)\nParameter class for p-unit model\n\n\n\na_zero : float\n\nAdaptation resting value\n\ndelta_a : float\n\nSampling interval of adaptation current\n\ndeltat : float\n\nSampling interval\n\ndend_tau : float\n\nTime constant of dendritic\n\ninput_scaling : flaot\n\nScalar multiplier for external currents\n\nmem_tau : float\n\nTime constant for membrane\n\nnoise_strength : float\n\nNoise added to the system\n\nref_period : float\n\nRefactory period\n\ntau_a : float\n\nTime constant for adaptation\n\nthreshold : float\n\nThreshold for spiking\n\nv_base : float\n\nThe reset potential after a spike\n\nv_offset : float\n\nVoltage offset\n\nv_zero : float\n\nResting potential\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a P-unit using JAX, returning a binary spike train.\n\n\n\n\n\nmodels.punit.simulate(key, stimulus, params)\nSimulate a P-unit using JAX, returning a binary spike train.",
-    "crumbs": [
-      "API",
-      "models",
-      "models.punit"
-    ]
-  },
-  {
-    "objectID": "api/models.punit.html#classes",
-    "href": "api/models.punit.html#classes",
-    "title": "models.punit",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nPUnitParams\nParameter class for p-unit model\n\n\n\n\n\nmodels.punit.PUnitParams(\n    a_zero,\n    delta_a,\n    deltat,\n    dend_tau,\n    input_scaling,\n    mem_tau,\n    noise_strength,\n    ref_period,\n    tau_a,\n    threshold,\n    v_base,\n    v_offset,\n    v_zero,\n)\nParameter class for p-unit model\n\n\n\na_zero : float\n\nAdaptation resting value\n\ndelta_a : float\n\nSampling interval of adaptation current\n\ndeltat : float\n\nSampling interval\n\ndend_tau : float\n\nTime constant of dendritic\n\ninput_scaling : flaot\n\nScalar multiplier for external currents\n\nmem_tau : float\n\nTime constant for membrane\n\nnoise_strength : float\n\nNoise added to the system\n\nref_period : float\n\nRefactory period\n\ntau_a : float\n\nTime constant for adaptation\n\nthreshold : float\n\nThreshold for spiking\n\nv_base : float\n\nThe reset potential after a spike\n\nv_offset : float\n\nVoltage offset\n\nv_zero : float\n\nResting potential",
-    "crumbs": [
-      "API",
-      "models",
-      "models.punit"
-    ]
-  },
-  {
-    "objectID": "api/models.punit.html#functions",
-    "href": "api/models.punit.html#functions",
-    "title": "models.punit",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a P-unit using JAX, returning a binary spike train.\n\n\n\n\n\nmodels.punit.simulate(key, stimulus, params)\nSimulate a P-unit using JAX, returning a binary spike train.",
-    "crumbs": [
-      "API",
-      "models",
-      "models.punit"
-    ]
-  },
-  {
-    "objectID": "api/models.lif.html",
-    "href": "api/models.lif.html",
-    "title": "models.lif",
-    "section": "",
-    "text": "models.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\n\n\n\nName\nDescription\n\n\n\n\nLIFParams\nLIF parameter class.\n\n\n\n\n\nmodels.lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)\nLIF parameter class.\n\n\n\nfs : int\n\nSampling intervall\n\nthreshold : flaot\n\nThreshold for spike\n\nv_offset : float\n\nVolatge offset\n\ntau_mem : float\n\nMembrane time constant\n\nv_base : float\n\nVolatge base\n\nnoise_strength : float\n\nNoise\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a LIF Model in JAX.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.lif.simulate(key, stimulus, params)\nSimulate a LIF Model in JAX.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\nLeaky-integrated-and-fire Model follows linear differential equation.\nSee the tutorial LIF\n\n\n\n\nmodels.lif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.lif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
-    "crumbs": [
-      "API",
-      "models",
-      "models.lif"
-    ]
-  },
-  {
-    "objectID": "api/models.lif.html#classes",
-    "href": "api/models.lif.html#classes",
-    "title": "models.lif",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nLIFParams\nLIF parameter class.\n\n\n\n\n\nmodels.lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)\nLIF parameter class.\n\n\n\nfs : int\n\nSampling intervall\n\nthreshold : flaot\n\nThreshold for spike\n\nv_offset : float\n\nVolatge offset\n\ntau_mem : float\n\nMembrane time constant\n\nv_base : float\n\nVolatge base\n\nnoise_strength : float\n\nNoise",
-    "crumbs": [
-      "API",
-      "models",
-      "models.lif"
-    ]
-  },
-  {
-    "objectID": "api/models.lif.html#functions",
-    "href": "api/models.lif.html#functions",
-    "title": "models.lif",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a LIF Model in JAX.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.lif.simulate(key, stimulus, params)\nSimulate a LIF Model in JAX.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\nLeaky-integrated-and-fire Model follows linear differential equation.\nSee the tutorial LIF\n\n\n\n\nmodels.lif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.lif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
-    "crumbs": [
-      "API",
-      "models",
-      "models.lif"
-    ]
-  },
-  {
-    "objectID": "introduction.html",
-    "href": "introduction.html",
-    "title": "Welcome to jAxon",
-    "section": "",
-    "text": "jAxon is a combination of the high performace array computing libaray JAX"
-  },
-  {
-    "objectID": "adex.html",
-    "href": "adex.html",
-    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
-    "section": "",
-    "text": "The Adaptive exponential Integrate-and-Fire model is a further increase in complexity, but can inherently explain variation, that is seen in biological systems. The main reson is this model can achive different bursting mechanisms, like regular bursting, inital bursts, and a combination of adaption. The AdEx model consists instead of a linear integration a exponetial integration, with an adaptation current:\n\\[\\tau_{m} \\frac{dv}{dt} = -(v(t)-v_{rest}) + \\Delta_{T}\\,\\exp(\\frac{v(t)-\\vartheta}{\\Delta_T}) - RA(t) + RI(t)\\]\nwhere the adaptation is definded as:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]",
-    "crumbs": [
-      "Tutorials",
-      "Adaptive Exponential Integrate-and-Fire (AdEx)"
-    ]
-  },
-  {
-    "objectID": "adex.html#motivation",
-    "href": "adex.html#motivation",
-    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
-    "section": "",
-    "text": "The Adaptive exponential Integrate-and-Fire model is a further increase in complexity, but can inherently explain variation, that is seen in biological systems. The main reson is this model can achive different bursting mechanisms, like regular bursting, inital bursts, and a combination of adaption. The AdEx model consists instead of a linear integration a exponetial integration, with an adaptation current:\n\\[\\tau_{m} \\frac{dv}{dt} = -(v(t)-v_{rest}) + \\Delta_{T}\\,\\exp(\\frac{v(t)-\\vartheta}{\\Delta_T}) - RA(t) + RI(t)\\]\nwhere the adaptation is definded as:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]",
-    "crumbs": [
-      "Tutorials",
-      "Adaptive Exponential Integrate-and-Fire (AdEx)"
-    ]
-  },
-  {
-    "objectID": "adex.html#implementation",
-    "href": "adex.html#implementation",
-    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
-    "section": "2. Implementation",
-    "text": "2. Implementation\nImplemented is this again with the Ohrnstein-Uhlenbeck form:\n\\[ \\tau_{m}\\frac{du}{dt} = -u(t)+ \\Delta_{T}\\,\\exp(\\frac{u(t)-\\vartheta}{\\Delta_T}) + - A(t) + \\textrm{stimulus} + \\sqrt{2D}\\xi(t) \\]\nwhere first is the exponetial calculated and currently clipped at -500 and 500, and after the voltage step the adaptation like this:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]\nLike in the LIF has a dataclass that holds the parameter needed for simulating the model: AdExParams",
-    "crumbs": [
-      "Tutorials",
-      "Adaptive Exponential Integrate-and-Fire (AdEx)"
-    ]
-  },
-  {
-    "objectID": "adex.html#example",
-    "href": "adex.html#example",
-    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
-    "section": "3. Example",
-    "text": "3. Example\nHere is a minimal example that get you started.\n\nimport jax\nimport jax.numpy as jnp\nimport jaxon.models.adex as adex\nimport jax.scipy as jsp\n\nduration = 10\n# parameters for LIF model\nfs = 1000\nthreshold = 1\ntau_mem = 0.01\nexp_threshold=1\nexp_deltat = 0.01\ntau_adapt = 2\ndeltat_adapt=0.01\nref_period = 0.001\nv_base = 0.0\nnoise_strength = 0.01\na=0.1\nb=0.02\n\n# parameter for kernel\nsigma = 0.2\nktime = 4\n\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 10)\ntime = jnp.arange(0, duration, 1/fs)\nparams = adex.AdExParams(fs=fs, threshold=threshold, tau_mem=tau_mem,\n                         tau_adapt= tau_adapt,\n                         v_base=v_base,ref_period=ref_period,\n                         deltat_adapt=deltat_adapt,\n                         noise_strength=noise_strength, a=a, b=b,\n                         exp_deltat=exp_deltat, exp_threshold=exp_threshold)\n\nstimulus = jnp.ones_like(time)\nbinary_spikes, vmem = adex.simulate(key, stimulus, params)\n\n\ndef calc_spike_rate(binary_spike_train, kernel):\n    return jsp.signal.fftconvolve(binary_spike_train, kernel, \"same\")\n\ndef gauss_kernel_jax(sigma, dt, k_time):\n    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)\n    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma\n    return y\n\nkernel = gauss_kernel_jax(sigma, 1/fs,ktime)\n\nrate = calc_spike_rate(binary_spikes, kernel)\n\nWe can now plot the simulation result of the LIF simulation.\n\nimport plotly.graph_objects as go \nfrom plotly.subplots import make_subplots\n\nfig = make_subplots(specs=[[{\"secondary_y\": True}]])\nfig.add_scatter(x=time, y=vmem, mode='lines', name=\"V\", secondary_y=False)\n\n\nfig.add_scatter(x=time[binary_spikes.astype(bool)],\n                y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',\n                marker_size=10, marker_color=\"red\", marker_symbol=\"arrow-down\",\n                name=\"Spikes\", secondary_y=False)\nfig.add_scatter(x=time, y=rate, name=\"Rate [Hz]\", secondary_y=True, marker_color=\"magenta\", line_width=4)\n\nfig.update_layout(xaxis_title=\"Time [s]\", yaxis_title=\"Volatage [aU]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\", secondary_y=True)",
-    "crumbs": [
-      "Tutorials",
-      "Adaptive Exponential Integrate-and-Fire (AdEx)"
+      "P-Unit model comparison",
+      "Baseline comparision"
     ]
   },
   {
@@ -240,10 +114,342 @@
     "href": "alif.html#example",
     "title": "Adaptive Leaky Integrated-and-Fire-Model with refractory period (aLIF)",
     "section": "3. Example",
-    "text": "3. Example\nHere is a minimal example that get you started.\n\nimport jax\nimport jax.numpy as jnp\nimport jaxon.models.alif as alif\nimport jax.scipy as jsp\n\n# parameters for LIF model\nfs = 1000\nduration = 3\nthreshold = 1.0\nv_offset = 0.5\ntau_mem = 0.01\ntau_adapt = 1\na_zero = 0.0\ndeltat_adapt=0.01\nref_period = 0.001\nv_base = 0.0\nnoise_strength = 0.01\n\n# parameter for kernel\nsigma = 0.1\nktime = 4\n\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 10)\ntime = jnp.arange(0, duration, 1/fs)\nparams = alif.ALIFRefParams(fs=fs, threshold=threshold, v_offset=v_offset,\n                            tau_mem=tau_mem, tau_adapt= tau_adapt,\n                            a_zero=a_zero, v_base=v_base,ref_period=ref_period,\n                            deltat_adapt=deltat_adapt,\n                            noise_strength=noise_strength)\nstimulus = jnp.ones_like(time)\nbinary_spikes, vmem = alif.simulate(key, stimulus, params)\n\n\ndef calc_spike_rate(binary_spike_train, kernel):\n    return jsp.signal.fftconvolve(binary_spike_train, kernel, \"same\")\n\ndef gauss_kernel_jax(sigma, dt, k_time):\n    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)\n    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma\n    return y\n\nkernel = gauss_kernel_jax(sigma, 1/fs,ktime)\n\nrate = calc_spike_rate(binary_spikes, kernel)\n\nWe can now plot the simulation result of the LIF simulation.\n\nimport plotly.graph_objects as go \nfrom plotly.subplots import make_subplots\n\nfig = make_subplots(specs=[[{\"secondary_y\": True}]])\nfig.add_scatter(x=time, y=vmem, mode='lines', name=\"V\", secondary_y=False)\n\n\nfig.add_scatter(x=time[binary_spikes.astype(bool)],\n                y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',\n                marker_size=10, marker_color=\"red\", marker_symbol=\"arrow-down\",\n                name=\"Spikes\", secondary_y=False)\nfig.add_scatter(x=time, y=rate, name=\"Rate [Hz]\", secondary_y=True, marker_color=\"magenta\", line_width=4)\n\nfig.update_layout(xaxis_title=\"Time [s]\", yaxis_title=\"Volatage [aU]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\", secondary_y=True)",
+    "text": "3. Example\nHere is a minimal example that get you started.\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\n\nimport jaxon.models.alif as alif\n\n# parameters for LIF model\nfs = 1000\nduration = 3\nthreshold = 1.0\nv_offset = 0.5\ntau_mem = 0.01\ntau_adapt = 1\na_zero = 0.0\ndeltat_adapt = 0.01\nref_period = 0.001\nv_base = 0.0\nnoise_strength = 0.01\n\n# parameter for kernel\nsigma = 0.1\nktime = 4\n\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 10)\ntime = jnp.arange(0, duration, 1 / fs)\nparams = alif.ALIFRefParams(\n    fs=fs,\n    threshold=threshold,\n    v_offset=v_offset,\n    tau_mem=tau_mem,\n    tau_adapt=tau_adapt,\n    a_zero=a_zero,\n    v_base=v_base,\n    ref_period=ref_period,\n    deltat_adapt=deltat_adapt,\n    noise_strength=noise_strength,\n)\nstimulus = jnp.ones_like(time)\nbinary_spikes, vmem = alif.simulate(key, stimulus, params)\n\n\ndef calc_spike_rate(binary_spike_train, kernel):\n    return jsp.signal.fftconvolve(binary_spike_train, kernel, \"same\")\n\n\ndef gauss_kernel_jax(sigma, dt, k_time):\n    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)\n    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma\n    return y\n\n\nkernel = gauss_kernel_jax(sigma, 1 / fs, ktime)\n\nrate = calc_spike_rate(binary_spikes, kernel)\n\nWe can now plot the simulation result of the LIF simulation.\n\nimport plotly.graph_objects as go\nfrom plotly.subplots import make_subplots\n\nfig = make_subplots(specs=[[{\"secondary_y\": True}]])\nfig.add_scatter(x=time, y=vmem, mode=\"lines\", name=\"V\", secondary_y=False)\n\n\nfig.add_scatter(\n    x=time[binary_spikes.astype(bool)],\n    y=vmem[binary_spikes.astype(bool)] + threshold,\n    mode=\"markers\",\n    marker_size=10,\n    marker_color=\"red\",\n    marker_symbol=\"arrow-down\",\n    name=\"Spikes\",\n    secondary_y=False,\n)\nfig.add_scatter(\n    x=time, y=rate, name=\"Rate [Hz]\", secondary_y=True, marker_color=\"magenta\", line_width=4\n)\n\nfig.update_layout(xaxis_title=\"Time [s]\", yaxis_title=\"Volatage [aU]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\", secondary_y=True)",
     "crumbs": [
       "Tutorials",
       "Adaptive Leaky Integrated-and-Fire-Model with refractory period (aLIF)"
+    ]
+  },
+  {
+    "objectID": "api/analyze.baseline.html",
+    "href": "api/analyze.baseline.html",
+    "title": "analyze.baseline",
+    "section": "",
+    "text": "analyze.baseline\nFunctions for analyzing spike trains.\n\n\n\n\n\nName\nDescription\n\n\n\n\nburst_fraction\nBurst fraction based on ISI distribution.\n\n\ncyclic_rate\nKernel density estimate of spike times relative to a periodic signal.\n\n\ninterval_statistics\nStatistics and kde of interspike intervals.\n\n\nserial_correlations\nSerial correlations of interspike intervals.\n\n\nvector_strength\nVector strength of spike times relative to a periodic signal.\n\n\n\n\n\nanalyze.baseline.burst_fraction(spikes, eodf, lthresh=0.1, rthresh=-0.05)\nBurst fraction based on ISI distribution.\n\n\n\nanalyze.baseline.cyclic_rate(spikes, cycles, sigma=0.05)\nKernel density estimate of spike times relative to a periodic signal.\nComputes for each spike time its phase \\(\\varphi_i\\) within the period of cycles. Kernel density estimate is then from these phases.\n\n\n\nspikes : ArrayLike\n\nSpike times.\n\ncycles : float | ArrayLike\n\nTimes of full periods. A single number indicates the period of the periodic signal.\n\nsigma : float = 0.05\n\nStandard deviation of Gaussian kernel used for the kde of interspike intervals. Between 0 and 1, 1 corresponds to a full period.\n\n\n\n\n\n\nphases : ndarray of floats\n\nPhases at which the kde is computed. Step size is set to a tenth of sigma.\n\nkde : ndarray of floats\n\nThe kernel density estimate of the spike times within periods of cycles.\n\n\n\n\n\n\nanalyze.baseline.interval_statistics(spikes, sigma=0.0001, maxisi=0.1)\nStatistics and kde of interspike intervals.\n\n\n\nspikes : ArrayLike\n\nBinary spike train.\n\nsigma : float = 0.0001\n\nStandard deviation of Gaussian kernel used for for kde of interspike intervals. Same unit as spikes.\n\nmaxisi : float = 0.1\n\nMaximum interspike interval for kde. If None or 0, use maximum interval.\n\n\n\n\n\n\n : tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]\n\n\n\nisis : ndarray of floats\n\nInterspike intervals for kde.\n\nkde : ndarray of floats\n\nKernel density estimate of interspike intervals for each isis. Plot it like this: ax.fill_between(isis, kde)\n\nrate : float\n\nMean baseline firing rate as inverse mean interspike interval.\n\ncv : float\n\nCoefficient of variation (std divided by mean) of the interspike intervals.\n\n\n\n\n\n\nanalyze.baseline.serial_correlations(spikes, max_lag=10)\nSerial correlations of interspike intervals.\n\n\n\nspikes : \n\nSpike times of baseline activity.\n\nmax_lag :  = 10\n\nCompute serial correlations up to this lag.\n\n\n\n\n\n\nlags : ndarray of ints\n\nLags for which interspike interval correlations have been computed. First one is zero, last one is max_lag.\n\ncorrs : ndarray of floats\n\nSerial correlations for all lags.\n\nnull : float\n\n99.9% percentile of the null hypothesis of no correlation.\n\n\n\n\n\n\nanalyze.baseline.vector_strength(spikes, cycles)\nVector strength of spike times relative to a periodic signal.\nComputes for each spike time its phase \\(\\varphi_i\\) within the period of cycles. Vector strength is then \\[vs = \\left|\\frac[1}{n} \\sum_{i=1}^n e^{i\\varphi_i} \\right|\\]\n\n\n\nspikes : ArrayLike\n\nSpike times.\n\ncycles : float | ArrayLike\n\nTimes of full periods. A single number indicates the period of the periodic signal.\n\n\n\n\n\n\nvs : float\n\nComputed vector strength.",
+    "crumbs": [
+      "API",
+      "analyze",
+      "analyze.baseline"
+    ]
+  },
+  {
+    "objectID": "api/analyze.baseline.html#functions",
+    "href": "api/analyze.baseline.html#functions",
+    "title": "analyze.baseline",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nburst_fraction\nBurst fraction based on ISI distribution.\n\n\ncyclic_rate\nKernel density estimate of spike times relative to a periodic signal.\n\n\ninterval_statistics\nStatistics and kde of interspike intervals.\n\n\nserial_correlations\nSerial correlations of interspike intervals.\n\n\nvector_strength\nVector strength of spike times relative to a periodic signal.\n\n\n\n\n\nanalyze.baseline.burst_fraction(spikes, eodf, lthresh=0.1, rthresh=-0.05)\nBurst fraction based on ISI distribution.\n\n\n\nanalyze.baseline.cyclic_rate(spikes, cycles, sigma=0.05)\nKernel density estimate of spike times relative to a periodic signal.\nComputes for each spike time its phase \\(\\varphi_i\\) within the period of cycles. Kernel density estimate is then from these phases.\n\n\n\nspikes : ArrayLike\n\nSpike times.\n\ncycles : float | ArrayLike\n\nTimes of full periods. A single number indicates the period of the periodic signal.\n\nsigma : float = 0.05\n\nStandard deviation of Gaussian kernel used for the kde of interspike intervals. Between 0 and 1, 1 corresponds to a full period.\n\n\n\n\n\n\nphases : ndarray of floats\n\nPhases at which the kde is computed. Step size is set to a tenth of sigma.\n\nkde : ndarray of floats\n\nThe kernel density estimate of the spike times within periods of cycles.\n\n\n\n\n\n\nanalyze.baseline.interval_statistics(spikes, sigma=0.0001, maxisi=0.1)\nStatistics and kde of interspike intervals.\n\n\n\nspikes : ArrayLike\n\nBinary spike train.\n\nsigma : float = 0.0001\n\nStandard deviation of Gaussian kernel used for for kde of interspike intervals. Same unit as spikes.\n\nmaxisi : float = 0.1\n\nMaximum interspike interval for kde. If None or 0, use maximum interval.\n\n\n\n\n\n\n : tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]\n\n\n\nisis : ndarray of floats\n\nInterspike intervals for kde.\n\nkde : ndarray of floats\n\nKernel density estimate of interspike intervals for each isis. Plot it like this: ax.fill_between(isis, kde)\n\nrate : float\n\nMean baseline firing rate as inverse mean interspike interval.\n\ncv : float\n\nCoefficient of variation (std divided by mean) of the interspike intervals.\n\n\n\n\n\n\nanalyze.baseline.serial_correlations(spikes, max_lag=10)\nSerial correlations of interspike intervals.\n\n\n\nspikes : \n\nSpike times of baseline activity.\n\nmax_lag :  = 10\n\nCompute serial correlations up to this lag.\n\n\n\n\n\n\nlags : ndarray of ints\n\nLags for which interspike interval correlations have been computed. First one is zero, last one is max_lag.\n\ncorrs : ndarray of floats\n\nSerial correlations for all lags.\n\nnull : float\n\n99.9% percentile of the null hypothesis of no correlation.\n\n\n\n\n\n\nanalyze.baseline.vector_strength(spikes, cycles)\nVector strength of spike times relative to a periodic signal.\nComputes for each spike time its phase \\(\\varphi_i\\) within the period of cycles. Vector strength is then \\[vs = \\left|\\frac[1}{n} \\sum_{i=1}^n e^{i\\varphi_i} \\right|\\]\n\n\n\nspikes : ArrayLike\n\nSpike times.\n\ncycles : float | ArrayLike\n\nTimes of full periods. A single number indicates the period of the periodic signal.\n\n\n\n\n\n\nvs : float\n\nComputed vector strength.",
+    "crumbs": [
+      "API",
+      "analyze",
+      "analyze.baseline"
+    ]
+  },
+  {
+    "objectID": "api/models.alif.html",
+    "href": "api/models.alif.html",
+    "title": "models.alif",
+    "section": "",
+    "text": "models.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.\n\n\n\n\n\nName\nDescription\n\n\n\n\nALIFRefParams\nLIF with adaptation and refractory period parameter class.\n\n\n\n\n\nmodels.alif.ALIFRefParams(\n    fs,\n    threshold,\n    v_offset,\n    tau_mem,\n    tau_adapt,\n    a_zero,\n    deltat_adapt,\n    ref_period,\n    v_base,\n    noise_strength,\n)\nLIF with adaptation and refractory period parameter class.\n\n\n\nfs : int\n\nSampling interval\n\nthreshold : float\n\nThreshold for spike\n\nv_offset : float\n\nVoltage offset\n\ntau_mem : float\n\nMembrane time constant\n\ntau_adapt : float\n\nAdaptation time constant\n\na_zero : float\n\nInitial adaptation current\n\ndeltat_adapt : float\n\nTime scale for adaptation\n\nref_period : float\n\nRefectory period where no spikes are generated\n\nv_base : float\n\nVoltage base\n\nnoise_strength : float\n\nNoise\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.alif.simulate(key, stimulus, params)\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.alif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.alif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.alif"
+    ]
+  },
+  {
+    "objectID": "api/models.alif.html#classes",
+    "href": "api/models.alif.html#classes",
+    "title": "models.alif",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nALIFRefParams\nLIF with adaptation and refractory period parameter class.\n\n\n\n\n\nmodels.alif.ALIFRefParams(\n    fs,\n    threshold,\n    v_offset,\n    tau_mem,\n    tau_adapt,\n    a_zero,\n    deltat_adapt,\n    ref_period,\n    v_base,\n    noise_strength,\n)\nLIF with adaptation and refractory period parameter class.\n\n\n\nfs : int\n\nSampling interval\n\nthreshold : float\n\nThreshold for spike\n\nv_offset : float\n\nVoltage offset\n\ntau_mem : float\n\nMembrane time constant\n\ntau_adapt : float\n\nAdaptation time constant\n\na_zero : float\n\nInitial adaptation current\n\ndeltat_adapt : float\n\nTime scale for adaptation\n\nref_period : float\n\nRefectory period where no spikes are generated\n\nv_base : float\n\nVoltage base\n\nnoise_strength : float\n\nNoise",
+    "crumbs": [
+      "API",
+      "models",
+      "models.alif"
+    ]
+  },
+  {
+    "objectID": "api/models.alif.html#functions",
+    "href": "api/models.alif.html#functions",
+    "title": "models.alif",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.alif.simulate(key, stimulus, params)\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.alif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.alif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.alif"
+    ]
+  },
+  {
+    "objectID": "api/models.adex.html",
+    "href": "api/models.adex.html",
+    "title": "models.adex",
+    "section": "",
+    "text": "models.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nName\nDescription\n\n\n\n\nAdExParams\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nmodels.adex.AdExParams(\n    fs,\n    tau_mem,\n    v_base,\n    threshold,\n    exp_threshold,\n    exp_deltat,\n    tau_adapt,\n    deltat_adapt,\n    a,\n    b,\n    ref_period,\n    noise_strength,\n)\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nfs : int\n\nSampling frequency.\n\ntau_mem : float\n\nMembrane time constant.\n\nv_base : float\n\nReset potential after a spike.\n\nthreshold : float\n\nSpike detection threshold.\n\nexp_threshold : float\n\nExponential spike-initiation voltage.\n\nexp_deltat : float\n\nSharpness of the exponential spike initiation.\n\ntau_adapt : float\n\nAdaptation time constant.\n\ndeltat_adapt : float\n\nAdaptation integration timestep.\n\na : float\n\nSubthreshold adaptation coupling .\n\nb : float\n\nSpike-triggered adaptation increment.\n\nref_period : float\n\nAbsolute refractory period (ms).\n\nnoise_strength : float\n\nNoise std dev added to the membrane input.\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.adex.simulate(key, stimulus, params)\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput current\n\nparams : AdExParams class\n\nparameter\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.adex.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.adex.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nparameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.adex"
+    ]
+  },
+  {
+    "objectID": "api/models.adex.html#classes",
+    "href": "api/models.adex.html#classes",
+    "title": "models.adex",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nAdExParams\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\n\n\nmodels.adex.AdExParams(\n    fs,\n    tau_mem,\n    v_base,\n    threshold,\n    exp_threshold,\n    exp_deltat,\n    tau_adapt,\n    deltat_adapt,\n    a,\n    b,\n    ref_period,\n    noise_strength,\n)\nParameters for the Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nfs : int\n\nSampling frequency.\n\ntau_mem : float\n\nMembrane time constant.\n\nv_base : float\n\nReset potential after a spike.\n\nthreshold : float\n\nSpike detection threshold.\n\nexp_threshold : float\n\nExponential spike-initiation voltage.\n\nexp_deltat : float\n\nSharpness of the exponential spike initiation.\n\ntau_adapt : float\n\nAdaptation time constant.\n\ndeltat_adapt : float\n\nAdaptation integration timestep.\n\na : float\n\nSubthreshold adaptation coupling .\n\nb : float\n\nSpike-triggered adaptation increment.\n\nref_period : float\n\nAbsolute refractory period (ms).\n\nnoise_strength : float\n\nNoise std dev added to the membrane input.",
+    "crumbs": [
+      "API",
+      "models",
+      "models.adex"
+    ]
+  },
+  {
+    "objectID": "api/models.adex.html#functions",
+    "href": "api/models.adex.html#functions",
+    "title": "models.adex",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.adex.simulate(key, stimulus, params)\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput current\n\nparams : AdExParams class\n\nparameter\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.adex.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.adex.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : AdExParams\n\nparameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.adex"
+    ]
+  },
+  {
+    "objectID": "api/index.html",
+    "href": "api/index.html",
+    "title": "Function reference",
+    "section": "",
+    "text": "Simulation models which you can use\n\n\n\nmodels.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\nmodels.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nmodels.punit\n\n\n\nmodels.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.\n\n\n\n\n\n\nStimuli functions\n\n\n\nstimuli.noise\n\n\n\n\n\n\n\nAnylyze functions\n\n\n\nanalyze.baseline\nFunctions for analyzing spike trains.\n\n\nanalyze.spectral\nFunctions for spectral analysis.",
+    "crumbs": [
+      "API"
+    ]
+  },
+  {
+    "objectID": "api/index.html#model",
+    "href": "api/index.html#model",
+    "title": "Function reference",
+    "section": "",
+    "text": "Simulation models which you can use\n\n\n\nmodels.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\nmodels.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nmodels.punit\n\n\n\nmodels.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.",
+    "crumbs": [
+      "API"
+    ]
+  },
+  {
+    "objectID": "api/index.html#stimulus",
+    "href": "api/index.html#stimulus",
+    "title": "Function reference",
+    "section": "",
+    "text": "Stimuli functions\n\n\n\nstimuli.noise",
+    "crumbs": [
+      "API"
+    ]
+  },
+  {
+    "objectID": "api/index.html#analyze",
+    "href": "api/index.html#analyze",
+    "title": "Function reference",
+    "section": "",
+    "text": "Anylyze functions\n\n\n\nanalyze.baseline\nFunctions for analyzing spike trains.\n\n\nanalyze.spectral\nFunctions for spectral analysis.",
+    "crumbs": [
+      "API"
+    ]
+  },
+  {
+    "objectID": "api/models.lif.html",
+    "href": "api/models.lif.html",
+    "title": "models.lif",
+    "section": "",
+    "text": "models.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\n\n\n\nName\nDescription\n\n\n\n\nLIFParams\nLIF parameter class.\n\n\n\n\n\nmodels.lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)\nLIF parameter class.\n\n\n\nfs : int\n\nSampling intervall\n\nthreshold : flaot\n\nThreshold for spike\n\nv_offset : float\n\nVolatge offset\n\ntau_mem : float\n\nMembrane time constant\n\nv_base : float\n\nVolatge base\n\nnoise_strength : float\n\nNoise\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a LIF Model in JAX.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.lif.simulate(key, stimulus, params)\nSimulate a LIF Model in JAX.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\nLeaky-integrated-and-fire Model follows linear differential equation.\nSee the tutorial LIF\n\n\n\n\nmodels.lif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.lif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.lif"
+    ]
+  },
+  {
+    "objectID": "api/models.lif.html#classes",
+    "href": "api/models.lif.html#classes",
+    "title": "models.lif",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nLIFParams\nLIF parameter class.\n\n\n\n\n\nmodels.lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)\nLIF parameter class.\n\n\n\nfs : int\n\nSampling intervall\n\nthreshold : flaot\n\nThreshold for spike\n\nv_offset : float\n\nVolatge offset\n\ntau_mem : float\n\nMembrane time constant\n\nv_base : float\n\nVolatge base\n\nnoise_strength : float\n\nNoise",
+    "crumbs": [
+      "API",
+      "models",
+      "models.lif"
+    ]
+  },
+  {
+    "objectID": "api/models.lif.html#functions",
+    "href": "api/models.lif.html#functions",
+    "title": "models.lif",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a LIF Model in JAX.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.lif.simulate(key, stimulus, params)\nSimulate a LIF Model in JAX.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\nLeaky-integrated-and-fire Model follows linear differential equation.\nSee the tutorial LIF\n\n\n\n\nmodels.lif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.lif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : LIFParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.lif"
+    ]
+  },
+  {
+    "objectID": "api/models.punit.html",
+    "href": "api/models.punit.html",
+    "title": "models.punit",
+    "section": "",
+    "text": "models.punit\n\n\n\n\n\nName\nDescription\n\n\n\n\nPUnitParams\nParameter class for P-unit model.\n\n\n\n\n\nmodels.punit.PUnitParams(\n    a_zero,\n    delta_a,\n    deltat,\n    dend_tau,\n    input_scaling,\n    mem_tau,\n    noise_strength,\n    ref_period,\n    tau_a,\n    threshold,\n    v_base,\n    v_offset,\n    v_zero,\n)\nParameter class for P-unit model.\n\n\n\na_zero : float\n\nAdaptation resting value\n\ndelta_a : float\n\nSampling interval of adaptation current\n\ndeltat : float\n\nSampling interval\n\ndend_tau : float\n\nTime constant of dendritic\n\ninput_scaling : flaot\n\nScalar multiplier for external currents\n\nmem_tau : float\n\nTime constant for membrane\n\nnoise_strength : float\n\nNoise added to the system\n\nref_period : float\n\nRefactory period\n\ntau_a : float\n\nTime constant for adaptation\n\nthreshold : float\n\nThreshold for spiking\n\nv_base : float\n\nThe reset potential after a spike\n\nv_offset : float\n\nVoltage offset\n\nv_zero : float\n\nResting potential\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a P-unit.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.punit.simulate(key, stimulus, params)\nSimulate a P-unit.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.punit.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nPUnitParams parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.punit.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nPUnitParams parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.punit"
+    ]
+  },
+  {
+    "objectID": "api/models.punit.html#classes",
+    "href": "api/models.punit.html#classes",
+    "title": "models.punit",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nPUnitParams\nParameter class for P-unit model.\n\n\n\n\n\nmodels.punit.PUnitParams(\n    a_zero,\n    delta_a,\n    deltat,\n    dend_tau,\n    input_scaling,\n    mem_tau,\n    noise_strength,\n    ref_period,\n    tau_a,\n    threshold,\n    v_base,\n    v_offset,\n    v_zero,\n)\nParameter class for P-unit model.\n\n\n\na_zero : float\n\nAdaptation resting value\n\ndelta_a : float\n\nSampling interval of adaptation current\n\ndeltat : float\n\nSampling interval\n\ndend_tau : float\n\nTime constant of dendritic\n\ninput_scaling : flaot\n\nScalar multiplier for external currents\n\nmem_tau : float\n\nTime constant for membrane\n\nnoise_strength : float\n\nNoise added to the system\n\nref_period : float\n\nRefactory period\n\ntau_a : float\n\nTime constant for adaptation\n\nthreshold : float\n\nThreshold for spiking\n\nv_base : float\n\nThe reset potential after a spike\n\nv_offset : float\n\nVoltage offset\n\nv_zero : float\n\nResting potential",
+    "crumbs": [
+      "API",
+      "models",
+      "models.punit"
+    ]
+  },
+  {
+    "objectID": "api/models.punit.html#functions",
+    "href": "api/models.punit.html#functions",
+    "title": "models.punit",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a P-unit.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.punit.simulate(key, stimulus, params)\nSimulate a P-unit.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.punit.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nPUnitParams parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.punit.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : PUnitParams\n\nPUnitParams parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
+    "crumbs": [
+      "API",
+      "models",
+      "models.punit"
+    ]
+  },
+  {
+    "objectID": "api/stimuli.noise.html",
+    "href": "api/stimuli.noise.html",
+    "title": "stimuli.noise",
+    "section": "",
+    "text": "stimuli.noise\n\n\n\n\n\nName\nDescription\n\n\n\n\nwhitenoise\nJAX-native, JIT-compatible band-limited white noise generator.\n\n\n\n\n\nstimuli.noise.whitenoise(key, cflow, cfup, fs, duration, scaling=1.0)\nJAX-native, JIT-compatible band-limited white noise generator.\nGenerates white noise with a flat power spectrum between cflow and cfup Hertz.\n\n\n\nkey : jax.random.PRNGKey\n\nThe random key for generation.\n\ncflow : float\n\nLower cutoff frequency in Hertz.\n\ncfup : float\n\nUpper cutoff frequency in Hertz.\n\nfs : int\n\nSampling rate in Hz.\n\nduration : float\n\nTotal duration of the resulting array in seconds.\n\nscaling : float = 1.0\n\nFinal scaling factor for the noise.\n\n\n\n\n\n\nnoise : 1-D JAX array\n\nBand-limited white noise.",
+    "crumbs": [
+      "API",
+      "stimuli",
+      "stimuli.noise"
+    ]
+  },
+  {
+    "objectID": "api/stimuli.noise.html#functions",
+    "href": "api/stimuli.noise.html#functions",
+    "title": "stimuli.noise",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nwhitenoise\nJAX-native, JIT-compatible band-limited white noise generator.\n\n\n\n\n\nstimuli.noise.whitenoise(key, cflow, cfup, fs, duration, scaling=1.0)\nJAX-native, JIT-compatible band-limited white noise generator.\nGenerates white noise with a flat power spectrum between cflow and cfup Hertz.\n\n\n\nkey : jax.random.PRNGKey\n\nThe random key for generation.\n\ncflow : float\n\nLower cutoff frequency in Hertz.\n\ncfup : float\n\nUpper cutoff frequency in Hertz.\n\nfs : int\n\nSampling rate in Hz.\n\nduration : float\n\nTotal duration of the resulting array in seconds.\n\nscaling : float = 1.0\n\nFinal scaling factor for the noise.\n\n\n\n\n\n\nnoise : 1-D JAX array\n\nBand-limited white noise.",
+    "crumbs": [
+      "API",
+      "stimuli",
+      "stimuli.noise"
+    ]
+  },
+  {
+    "objectID": "api/analyze.spectral.html",
+    "href": "api/analyze.spectral.html",
+    "title": "analyze.spectral",
+    "section": "",
+    "text": "analyze.spectral\nanalyze.spectral\nFunctions for spectral analysis.",
+    "crumbs": [
+      "API",
+      "analyze",
+      "analyze.spectral"
+    ]
+  },
+  {
+    "objectID": "adex.html",
+    "href": "adex.html",
+    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
+    "section": "",
+    "text": "The Adaptive exponential Integrate-and-Fire model is a further increase in complexity, but can inherently explain variation, that is seen in biological systems. The main reson is this model can achive different bursting mechanisms, like regular bursting, inital bursts, and a combination of adaption. The AdEx model consists instead of a linear integration a exponetial integration, with an adaptation current:\n\\[\\tau_{m} \\frac{dv}{dt} = -(v(t)-v_{rest}) + \\Delta_{T}\\,\\exp(\\frac{v(t)-\\vartheta}{\\Delta_T}) - RA(t) + RI(t)\\]\nwhere the adaptation is definded as:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]",
+    "crumbs": [
+      "Tutorials",
+      "Adaptive Exponential Integrate-and-Fire (AdEx)"
+    ]
+  },
+  {
+    "objectID": "adex.html#motivation",
+    "href": "adex.html#motivation",
+    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
+    "section": "",
+    "text": "The Adaptive exponential Integrate-and-Fire model is a further increase in complexity, but can inherently explain variation, that is seen in biological systems. The main reson is this model can achive different bursting mechanisms, like regular bursting, inital bursts, and a combination of adaption. The AdEx model consists instead of a linear integration a exponetial integration, with an adaptation current:\n\\[\\tau_{m} \\frac{dv}{dt} = -(v(t)-v_{rest}) + \\Delta_{T}\\,\\exp(\\frac{v(t)-\\vartheta}{\\Delta_T}) - RA(t) + RI(t)\\]\nwhere the adaptation is definded as:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]",
+    "crumbs": [
+      "Tutorials",
+      "Adaptive Exponential Integrate-and-Fire (AdEx)"
+    ]
+  },
+  {
+    "objectID": "adex.html#implementation",
+    "href": "adex.html#implementation",
+    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
+    "section": "2. Implementation",
+    "text": "2. Implementation\nImplemented is this again with the Ohrnstein-Uhlenbeck form:\n\\[ \\tau_{m}\\frac{du}{dt} = -u(t)+ \\Delta_{T}\\,\\exp(\\frac{u(t)-\\vartheta}{\\Delta_T}) + - A(t) + \\textrm{stimulus} + \\sqrt{2D}\\xi(t) \\]\nwhere first is the exponetial calculated and currently clipped at -500 and 500, and after the voltage step the adaptation like this:\n\\[\\tau_{a} \\frac{dA}{dt} = a(v-v_{rest}) - A + b\\tau_{a}\\]\nLike in the LIF has a dataclass that holds the parameter needed for simulating the model: AdExParams",
+    "crumbs": [
+      "Tutorials",
+      "Adaptive Exponential Integrate-and-Fire (AdEx)"
+    ]
+  },
+  {
+    "objectID": "adex.html#example",
+    "href": "adex.html#example",
+    "title": "Adaptive Exponential Integrate-and-Fire (AdEx)",
+    "section": "3. Example",
+    "text": "3. Example\nHere is a minimal example that get you started.\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\n\nimport jaxon.models.adex as adex\nfrom jaxon.dsp.kernels import gauss_kernel\nfrom jaxon.dsp.rate import spike_rate\n\nduration = 10\n# parameters for LIF model\nfs = 1000\nthreshold = 1\ntau_mem = 0.01\nexp_threshold = 1\nexp_deltat = 0.01\ntau_adapt = 2\ndeltat_adapt = 0.01\nref_period = 0.001\nv_base = 0.0\nnoise_strength = 0.01\na = 0.1\nb = 0.02\n\n# parameter for kernel\nsigma = 0.2\nktime = 4\n\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 10)\ntime = jnp.arange(0, duration, 1 / fs)\nparams = adex.AdExParams(\n    fs=fs,\n    threshold=threshold,\n    tau_mem=tau_mem,\n    tau_adapt=tau_adapt,\n    v_base=v_base,\n    ref_period=ref_period,\n    deltat_adapt=deltat_adapt,\n    noise_strength=noise_strength,\n    a=a,\n    b=b,\n    exp_deltat=exp_deltat,\n    exp_threshold=exp_threshold,\n)\n\nstimulus = jnp.ones_like(time)\nbinary_spikes, vmem = adex.simulate(key, stimulus, params)\n\n\nkernel = gauss_kernel(sigma, 1 / fs, ktime)\n\nrate = spike_rate(binary_spikes, kernel)\n\nWe can now plot the simulation result of the LIF simulation.\n\nimport plotly.graph_objects as go\nfrom plotly.subplots import make_subplots\n\nfig = make_subplots(specs=[[{\"secondary_y\": True}]])\nfig.add_scatter(x=time, y=vmem, mode=\"lines\", name=\"V\", secondary_y=False)\n\n\nfig.add_scatter(\n    x=time[binary_spikes.astype(bool)],\n    y=vmem[binary_spikes.astype(bool)] + threshold,\n    mode=\"markers\",\n    marker_size=10,\n    marker_color=\"red\",\n    marker_symbol=\"arrow-down\",\n    name=\"Spikes\",\n    secondary_y=False,\n)\nfig.add_scatter(\n    x=time, y=rate, name=\"Rate [Hz]\", secondary_y=True, marker_color=\"magenta\", line_width=4\n)\n\nfig.update_layout(xaxis_title=\"Time [s]\", yaxis_title=\"Volatage [aU]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\", secondary_y=True)",
+    "crumbs": [
+      "Tutorials",
+      "Adaptive Exponential Integrate-and-Fire (AdEx)"
+    ]
+  },
+  {
+    "objectID": "jax.html",
+    "href": "jax.html",
+    "title": "Introduction to JAX",
+    "section": "",
+    "text": "This is a quick tutorial on JAX that get you started. JAX can be thought of a drop in replacement for numpy with the major improvement of using the GPU through the XLA compiler.",
+    "crumbs": [
+      "Tutorials",
+      "Introduction to JAX"
+    ]
+  },
+  {
+    "objectID": "jax.html#the-jax-library",
+    "href": "jax.html#the-jax-library",
+    "title": "Introduction to JAX",
+    "section": "1. The JAX Library",
+    "text": "1. The JAX Library\nFirst, let’s import and jax and JAX has numpy module named jax.numpy, which can be shortened to jnp\n\nimport jax\nimport jax.numpy as jnp\nimport plotly.graph_objects as go\nfrom jax.typing import ArrayLike  # for type annotation\n\nWith this we can simply do things like in numpy, we can create arrays do computations:\n\narr = jnp.arange(10)\nprint(arr)\nnew_arr = arr + 10\nprint(new_arr)\n\n[0 1 2 3 4 5 6 7 8 9]\n[10 11 12 13 14 15 16 17 18 19]\n\n\n\n1.1 In place operation\nTwo major differences to numpy are the in place updates and the creation on random numbers: But more on this in the sharp bits.\n\n# This will result in an TypeError\ntry:\n    arr[0] = 10\nexcept TypeError:\n    print(\"This is not allowed in JAX\")\n# You can use .at.set methods to circumvent this problem\narr.at[0].set(10)\n\nThis is not allowed in JAX\n\n\nArray([10,  1,  2,  3,  4,  5,  6,  7,  8,  9], dtype=int32)\n\n\n\n\n1.2 Random numbers\nRandom numbers are generated through so called keys to ensure pure functions. Somewhat like the random seed in numpy.\n\n# this will generate the main key\nkey = jax.random.PRNGKey(42)\n# you can generate new keys for computations\nold_key, key = jax.random.split(key)\nnoise = jax.random.normal(key, 200)\nnoise2 = jax.random.normal(old_key, 200)\n\n\nfig = go.Figure()\nfig.add_histogram(x=noise, name=\"Noise Key 1\")\nfig.add_histogram(x=noise2, name=\"Noise Key 2\")\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n# but if you use the same key again you get the same random numbers\nnoise3 = jax.random.normal(key, 200)\nprint(f\"All values are the same: {jnp.all(noise == noise3)}\")\n\nAll values are the same: True",
+    "crumbs": [
+      "Tutorials",
+      "Introduction to JAX"
+    ]
+  },
+  {
+    "objectID": "jax.html#just-in-time-compilation",
+    "href": "jax.html#just-in-time-compilation",
+    "title": "Introduction to JAX",
+    "section": "2. Just in time compilation",
+    "text": "2. Just in time compilation\nJAX allows us to improve JAX functions, which can massively decrease computations\n\ndef multiplication(a: ArrayLike, b: ArrayLike) -&gt; jax.Array:\n    return jnp.dot(a, b)\n\n\narr1 = jnp.arange(10000).reshape(100, 100)\narr2 = jnp.ones(10000).reshape(100, 100)\nres = multiplication(arr1, arr2)\n\n# you can compile a function with jax.jit\njitted_fuc = jax.jit(multiplication)\n# or you can add a decorator to a function\n\n\n@jax.jit\ndef multiplication_jitted(a: ArrayLike, b: ArrayLike) -&gt; jax.Array:\n    return jnp.dot(a, b)\n\n\nres = multiplication_jitted(arr1, arr2)\nres1 = jitted_fuc(arr1, arr2)\n\n\n\n\n\n\n\nWarning\n\n\n\nBut you can’t just in time compile every function! JAX does not allow if the result depends on a condition.\ndef f(x):\n    if x &gt; 0:\n        return x\n    else:\n        return 2 * x\n\n\njax.jit(f)(10)  # Raises an error",
+    "crumbs": [
+      "Tutorials",
+      "Introduction to JAX"
+    ]
+  },
+  {
+    "objectID": "jax.html#mapping-across-multiple-entries",
+    "href": "jax.html#mapping-across-multiple-entries",
+    "title": "Introduction to JAX",
+    "section": "3. Mapping across multiple entries",
+    "text": "3. Mapping across multiple entries\nFinally, JAX allows to omit for loops by a method called jax.vmap. With jax.vmap you can make computations across a certain array like arr1. This is useful if you want to calculate the spike rate with a kernel! You have like a spike array with shape (trials, time) and a kernel function, with jax.vmap you can vmap the kernel function over trials.\n\nimport jax.scipy as jsp\n\n\ndef calc_spike_rate(binary_spike_train, kernel):\n    return jsp.signal.fftconvolve(binary_spike_train, kernel, \"same\")\n\n\ndef gauss_kernel_jax(sigma, dt, k_time):\n    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)\n    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma\n    return y\n\n\nfs = 30_000\nsigma = 0.001\nktime = 4\ntrials = 5\nkernel = gauss_kernel_jax(sigma, 1 / fs, ktime)\nspikes = (jax.random.normal(key, (trials, fs)) &lt; 0.1).astype(int)\n\nvmaped_spike_rate = jax.vmap(calc_spike_rate, in_axes=[0, None])\nres = vmaped_spike_rate(spikes, kernel)\n\nfig = go.Figure()\nfig.add_scatter(x=jnp.arange(fs) / fs, y=res[0], mode=\"lines\")\nfig.update_xaxes(title_text=\"Time [s]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\")",
+    "crumbs": [
+      "Tutorials",
+      "Introduction to JAX"
     ]
   },
   {
@@ -297,137 +503,36 @@
     ]
   },
   {
-    "objectID": "jax.html",
-    "href": "jax.html",
-    "title": "Introduction to JAX",
+    "objectID": "punit.html",
+    "href": "punit.html",
+    "title": "Punit Model",
     "section": "",
-    "text": "This is a quick tutorial on JAX that get you started. JAX can be thought of a drop in replacement for numpy with the major improvement of using the GPU through the XLA compiler.",
+    "text": "The P-Unit model is a LIF model which additionally embeds different aspects of the sensory pathway in the weakly electric fish. The input to this model in the baseline condition is a sinus with the frequency of the EOD, where the amplitude is normalized to one:\n\\[\n    S(t) = S_{EOD}(t) = \\cos(2\\pi f_{EOD} t)\n\\]\nThe P-Units respond to amplitude changes on their carrier EOD. To stimulate the P-Unit model with gaussian white noise one has to multiply the baseline with the amplitude modulation, with a default contrast (\\(c\\)) of 10%.\n\\[\n    S_{am}(t) = S_{EOD}(t) + (S_{EOD}(t) \\xi(t) c)\n\\]\nThis stimulus passes then a threshold operation between the receptor cell and afferent (P-Unit) . Through the afferent dendrite the stimulus is low-pass filtered which is governed by the dendrite time constant \\(\\tau_{d}\\).\n\\[\n  \\tau_{d} \\frac{d V_{d}}{d t} = -V_{d}+  \\lfloor S(t) \\rfloor_{0}^{p}\n\\]\nThe resulting voltage has a scaling factor \\(\\alpha\\) and is the input in the LIF. Another addition to the standard LIF model is an adaption current, which is subtracted for the membrane voltage.\n\\[\n  \\tau_{A} \\frac{d A}{d t} = - A\n\\]\nLastly there is a refractory period, where after the membrane voltage \\(V_m(t)\\) crossed the threshold of \\(\\theta = 1\\), the integration of \\(V_m(t)\\) is paused. The fixed input bias \\(\\mu\\) and the noise term \\(\\sqrt{2D}\\xi(t)\\) is the same as in the standard LIF. This results in the following differential equation:\n\\[\n  \\tau_{m} \\frac{d V_{m}}{d t}  = - V_{m} + \\mu + \\alpha V_{d} - A + \\sqrt{2D}\\xi(t)\n\\]",
     "crumbs": [
       "Tutorials",
-      "Introduction to JAX"
+      "Punit Model"
     ]
   },
   {
-    "objectID": "jax.html#the-jax-library",
-    "href": "jax.html#the-jax-library",
-    "title": "Introduction to JAX",
-    "section": "1. The JAX Library",
-    "text": "1. The JAX Library\nFirst, let’s import and jax and JAX has numpy module named jax.numpy, which can be shortened to jnp\n\nimport jax\nimport jax.numpy as jnp\nimport plotly.graph_objects as go\nfrom jax.typing import ArrayLike # for type annotation\n\nWith this we can simply do things like in numpy, we can create arrays do computations:\n\narr = jnp.arange(10)\nprint(arr)\nnew_arr = arr + 10\nprint(new_arr)\n\n[0 1 2 3 4 5 6 7 8 9]\n[10 11 12 13 14 15 16 17 18 19]\n\n\n\n1.1 In place operation\nTwo major differences to numpy are the in place updates and the creation on random numbers: But more on this in the sharp bits.\n\n# This will result in an TypeError\ntry:\n  arr[0] = 10\nexcept TypeError:\n  print(\"This is not allowed in JAX\")\n# You can use .at.set methods to circumvent this problem\narr.at[0].set(10)\n\nThis is not allowed in JAX\n\n\nArray([10,  1,  2,  3,  4,  5,  6,  7,  8,  9], dtype=int32)\n\n\n\n\n1.2 Random numbers\nRandom numbers are generated through so called keys to ensure pure functions. Somewhat like the random seed in numpy.\n\n# this will generate the main key\nkey = jax.random.PRNGKey(42)\n# you can generate new keys for computations\nold_key, key = jax.random.split(key)\nnoise = jax.random.normal(key, 200)\nnoise2 = jax.random.normal(old_key, 200)\n\n\nfig = go.Figure()\nfig.add_histogram(x=noise, name=\"Noise Key 1\")\nfig.add_histogram(x=noise2, name=\"Noise Key 2\")\n\n\n\n                            \n                                            \n\n\n                            \n                                            \n\n\n\n# but if you use the same key again you get the same random numbers\nnoise3 = jax.random.normal(key, 200)\nprint(f\"All values are the same: {jnp.all(noise == noise3)}\")\n\nAll values are the same: True",
+    "objectID": "punit.html#motivation-and-implementaion",
+    "href": "punit.html#motivation-and-implementaion",
+    "title": "Punit Model",
+    "section": "",
+    "text": "The P-Unit model is a LIF model which additionally embeds different aspects of the sensory pathway in the weakly electric fish. The input to this model in the baseline condition is a sinus with the frequency of the EOD, where the amplitude is normalized to one:\n\\[\n    S(t) = S_{EOD}(t) = \\cos(2\\pi f_{EOD} t)\n\\]\nThe P-Units respond to amplitude changes on their carrier EOD. To stimulate the P-Unit model with gaussian white noise one has to multiply the baseline with the amplitude modulation, with a default contrast (\\(c\\)) of 10%.\n\\[\n    S_{am}(t) = S_{EOD}(t) + (S_{EOD}(t) \\xi(t) c)\n\\]\nThis stimulus passes then a threshold operation between the receptor cell and afferent (P-Unit) . Through the afferent dendrite the stimulus is low-pass filtered which is governed by the dendrite time constant \\(\\tau_{d}\\).\n\\[\n  \\tau_{d} \\frac{d V_{d}}{d t} = -V_{d}+  \\lfloor S(t) \\rfloor_{0}^{p}\n\\]\nThe resulting voltage has a scaling factor \\(\\alpha\\) and is the input in the LIF. Another addition to the standard LIF model is an adaption current, which is subtracted for the membrane voltage.\n\\[\n  \\tau_{A} \\frac{d A}{d t} = - A\n\\]\nLastly there is a refractory period, where after the membrane voltage \\(V_m(t)\\) crossed the threshold of \\(\\theta = 1\\), the integration of \\(V_m(t)\\) is paused. The fixed input bias \\(\\mu\\) and the noise term \\(\\sqrt{2D}\\xi(t)\\) is the same as in the standard LIF. This results in the following differential equation:\n\\[\n  \\tau_{m} \\frac{d V_{m}}{d t}  = - V_{m} + \\mu + \\alpha V_{d} - A + \\sqrt{2D}\\xi(t)\n\\]",
     "crumbs": [
       "Tutorials",
-      "Introduction to JAX"
+      "Punit Model"
     ]
   },
   {
-    "objectID": "jax.html#just-in-time-compilation",
-    "href": "jax.html#just-in-time-compilation",
-    "title": "Introduction to JAX",
-    "section": "2. Just in time compilation",
-    "text": "2. Just in time compilation\nJAX allows us to improve JAX functions, which can massively decrease computations\n\ndef multiplication(a:ArrayLike, b:ArrayLike)-&gt;jax.Array:\n  return jnp.dot(a, b)\n\narr1 = jnp.arange(10000).reshape(100,100)\narr2 = jnp.ones(10000).reshape(100,100)\nres = multiplication(arr1, arr2)\n\n# you can compile a function with jax.jit\njitted_fuc = jax.jit(multiplication)\n# or you can add a decorator to a function\n\n@jax.jit\ndef multiplication_jitted(a:ArrayLike, b:ArrayLike)-&gt;jax.Array:\n  return jnp.dot(a, b)\n\nres = multiplication_jitted(arr1, arr2)\n\n\n\n\n\n\n\nWarning\n\n\n\nBut you can’t just in time compile every function! JAX does not allow if the result depends on a condition.\ndef f(x):\n  if x &gt; 0:\n    return x\n  else:\n    return 2 * x\n\njax.jit(f)(10)  # Raises an error",
+    "objectID": "punit.html#example",
+    "href": "punit.html#example",
+    "title": "Punit Model",
+    "section": "3. Example",
+    "text": "3. Example\nHere is a minimal example that get you started.\n\nimport jax\nimport jax.numpy as jnp\nimport jax.scipy as jsp\n\nimport jaxon.models.punit as punit\nfrom jaxon.dsp.kernels import gauss_kernel\nfrom jaxon.dsp.rate import spike_rate\n\nduration = 10\n# parameters for P-Unit model\npunit_params = {\n    \"cell\": \"2010-11-08-al-invivo-1\",\n    \"EODf\": 744.66,\n    \"a_zero\": 9.450855200303527,\n    \"delta_a\": 0.0604984400793618,\n    \"dend_tau\": 0.0007742334994649,\n    \"input_scaling\": 31.363843698084207,\n    \"mem_tau\": 0.0017257848281706,\n    \"noise_strength\": 0.0124091008125932,\n    \"ref_period\": 0.0010273077926126,\n    \"deltat\": 5e-05,\n    \"tau_a\": 0.1022386553157565,\n    \"threshold\": 1,\n    \"v_base\": 0,\n    \"v_offset\": -0.390625,\n    \"v_zero\": 0,\n}\ncell = punit_params.pop(\"cell\")\neodf = punit_params.pop(\"EODf\")\n\nparams = punit.PUnitParams(**punit_params)\n# parameter for kernel\nsigma = 0.007\nktime = 4\nfs = 1 / params.deltat\n\n# first generate a random key for the LIF model\nkey = jax.random.PRNGKey(42)\nkeys = jax.random.split(key, 10)\ntime = jnp.arange(0, duration, 1 / fs)\n\nstimulus = jnp.cos(2 * jnp.pi * eodf * time)\nbinary_spikes, vmem = punit.simulate(key, stimulus, params)\n\n\nkernel = gauss_kernel(sigma, 1 / fs, ktime)\n\nrate = spike_rate(binary_spikes, kernel)\n\nWe can now plot the simulation result of the simulation.\n\nimport plotly.graph_objects as go\nfrom plotly.subplots import make_subplots\n\nfig = make_subplots(specs=[[{\"secondary_y\": True}]])\nfig.add_scatter(x=time, y=vmem, mode=\"lines\", name=\"V\", secondary_y=False)\n\n\nfig.add_scatter(\n    x=time[binary_spikes.astype(bool)],\n    y=vmem[binary_spikes.astype(bool)] + params.threshold,\n    mode=\"markers\",\n    marker_size=10,\n    marker_color=\"red\",\n    marker_symbol=\"arrow-down\",\n    name=\"Spikes\",\n    secondary_y=False,\n)\nfig.add_scatter(\n    x=time, y=rate, name=\"Rate [Hz]\", secondary_y=True, marker_color=\"magenta\", line_width=4\n)\n\nfig.update_layout(xaxis_title=\"Time [s]\", yaxis_title=\"Volatage [aU]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\", secondary_y=True)\nfig.update_xaxes(range=[0, 0.2])",
     "crumbs": [
       "Tutorials",
-      "Introduction to JAX"
-    ]
-  },
-  {
-    "objectID": "jax.html#mapping-across-multiple-entries",
-    "href": "jax.html#mapping-across-multiple-entries",
-    "title": "Introduction to JAX",
-    "section": "3. Mapping across multiple entries",
-    "text": "3. Mapping across multiple entries\nFinally, JAX allows to omit for loops by a method called jax.vmap. With jax.vmap you can make computations across a certain array like arr1. This is useful if you want to calculate the spike rate with a kernel! You have like a spike array with shape (trials, time) and a kernel function, with jax.vmap you can vmap the kernel function over trials.\n\nimport jax.scipy as jsp\n\ndef calc_spike_rate(binary_spike_train, kernel):\n    return jsp.signal.fftconvolve(binary_spike_train, kernel, \"same\")\n\ndef gauss_kernel_jax(sigma, dt, k_time):\n    x = jnp.arange(-k_time * sigma, k_time * sigma, dt)\n    y = jnp.exp(-0.5 * (x / sigma) ** 2) / jnp.sqrt(2.0 * jnp.pi) / sigma\n    return y\n\nfs = 30_000\nsigma = 0.001\nktime = 4\ntrials = 5\nkernel = gauss_kernel_jax(sigma, 1/fs,ktime)\nspikes = (jax.random.normal(key, (trials, fs))&lt;0.1).astype(int)\n\nvmaped_spike_rate = jax.vmap(calc_spike_rate, in_axes=[0, None])\nres = vmaped_spike_rate(spikes,kernel)\n\nfig = go.Figure()\nfig.add_scatter(x = jnp.arange(fs)/fs, y = res[0], mode=\"lines\")\nfig.update_xaxes(title_text=\"Time [s]\")\nfig.update_yaxes(title_text=\"Rate [Hz]\")",
-    "crumbs": [
-      "Tutorials",
-      "Introduction to JAX"
-    ]
-  },
-  {
-    "objectID": "api/index.html",
-    "href": "api/index.html",
-    "title": "Function reference",
-    "section": "",
-    "text": "Simulation models which you can use\n\n\n\nmodels.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\nmodels.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nmodels.punit\n\n\n\nmodels.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.\n\n\n\n\n\n\nStimuli functions\n\n\n\nstimuli.whitenoise",
-    "crumbs": [
-      "API"
-    ]
-  },
-  {
-    "objectID": "api/index.html#model",
-    "href": "api/index.html#model",
-    "title": "Function reference",
-    "section": "",
-    "text": "Simulation models which you can use\n\n\n\nmodels.lif\nModel for simulating a leaky-Integrated-and-Fire Model.\n\n\nmodels.adex\nSimulate an Adaptive Exponential Integrate-and-Fire (AdEx) model.\n\n\nmodels.punit\n\n\n\nmodels.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.",
-    "crumbs": [
-      "API"
-    ]
-  },
-  {
-    "objectID": "api/index.html#stimulus",
-    "href": "api/index.html#stimulus",
-    "title": "Function reference",
-    "section": "",
-    "text": "Stimuli functions\n\n\n\nstimuli.whitenoise",
-    "crumbs": [
-      "API"
-    ]
-  },
-  {
-    "objectID": "api/models.alif.html",
-    "href": "api/models.alif.html",
-    "title": "models.alif",
-    "section": "",
-    "text": "models.alif\nModel for simulating a leaky-Integrated-and-Fire Model with adaptation and refractory period.\n\n\n\n\n\nName\nDescription\n\n\n\n\nALIFRefParams\nLIF with adaptation and refractory period parameter class.\n\n\n\n\n\nmodels.alif.ALIFRefParams(\n    fs,\n    threshold,\n    v_offset,\n    tau_mem,\n    tau_adapt,\n    a_zero,\n    deltat_adapt,\n    ref_period,\n    v_base,\n    noise_strength,\n)\nLIF with adaptation and refractory period parameter class.\n\n\n\nfs : int\n\nSampling interval\n\nthreshold : float\n\nThreshold for spike\n\nv_offset : float\n\nVoltage offset\n\ntau_mem : float\n\nMembrane time constant\n\ntau_adapt : float\n\nAdaptation time constant\n\na_zero : float\n\nInitial adaptation current\n\ndeltat_adapt : float\n\nTime scale for adaptation\n\nref_period : float\n\nRefectory period where no spikes are generated\n\nv_base : float\n\nVoltage base\n\nnoise_strength : float\n\nNoise\n\n\n\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nsimulate\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.alif.simulate(key, stimulus, params)\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.alif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.alif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
-    "crumbs": [
-      "API",
-      "models",
-      "models.alif"
-    ]
-  },
-  {
-    "objectID": "api/models.alif.html#classes",
-    "href": "api/models.alif.html#classes",
-    "title": "models.alif",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nALIFRefParams\nLIF with adaptation and refractory period parameter class.\n\n\n\n\n\nmodels.alif.ALIFRefParams(\n    fs,\n    threshold,\n    v_offset,\n    tau_mem,\n    tau_adapt,\n    a_zero,\n    deltat_adapt,\n    ref_period,\n    v_base,\n    noise_strength,\n)\nLIF with adaptation and refractory period parameter class.\n\n\n\nfs : int\n\nSampling interval\n\nthreshold : float\n\nThreshold for spike\n\nv_offset : float\n\nVoltage offset\n\ntau_mem : float\n\nMembrane time constant\n\ntau_adapt : float\n\nAdaptation time constant\n\na_zero : float\n\nInitial adaptation current\n\ndeltat_adapt : float\n\nTime scale for adaptation\n\nref_period : float\n\nRefectory period where no spikes are generated\n\nv_base : float\n\nVoltage base\n\nnoise_strength : float\n\nNoise",
-    "crumbs": [
-      "API",
-      "models",
-      "models.alif"
-    ]
-  },
-  {
-    "objectID": "api/models.alif.html#functions",
-    "href": "api/models.alif.html#functions",
-    "title": "models.alif",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nsimulate\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\nsimulate_mem_v\nSimulate membrane voltage.\n\n\nsimulate_spikes\nSimulate binary spike train.\n\n\n\n\n\nmodels.alif.simulate(key, stimulus, params)\nSimulate a leaky-Integrated-and-fire- Model with adaptation and refractory period.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nParameter class\n\n\n\n\n\n\nSIMOutput : class\n\nSimulation output class which holds both binary spikes and membrane voltage\n\n\n\n\n\n\nmodels.alif.simulate_mem_v(key, stimulus, params)\nSimulate membrane voltage.\nHelper function that only returns the membrane voltage. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nMembrane Voltage\n\n\n\n\n\n\nmodels.alif.simulate_spikes(key, stimulus, params)\nSimulate binary spike train.\nHelper function that only returns the binary spike train. Helpful for vmapping over trials.\n\n\n\nkey : jax.random.PRNGKey\n\nRandom key for noise generation.\n\nstimulus : 1-D jnp.ndarray\n\nInput stimulus.\n\nparams : ALIFRefParams\n\nLIF parameter class\n\n\n\n\n\n\n : jax.Array\n\nBinary spike train",
-    "crumbs": [
-      "API",
-      "models",
-      "models.alif"
-    ]
-  },
-  {
-    "objectID": "api/stimuli.whitenoise.html",
-    "href": "api/stimuli.whitenoise.html",
-    "title": "stimuli.whitenoise",
-    "section": "",
-    "text": "stimuli.whitenoise\n\n\n\n\n\nName\nDescription\n\n\n\n\nwhitenoise\nJAX-native, JIT-compatible band-limited white noise generator.\n\n\n\n\n\nstimuli.whitenoise.whitenoise(key, cflow, cfup, fs, duration, scaling=1.0)\nJAX-native, JIT-compatible band-limited white noise generator.\nGenerates white noise with a flat power spectrum between cflow and cfup Hertz.\n\n\n\nkey : jax.random.PRNGKey\n\nThe random key for generation.\n\ncflow : float\n\nLower cutoff frequency in Hertz.\n\ncfup : float\n\nUpper cutoff frequency in Hertz.\n\nfs : int\n\nSampling rate in Hz.\n\nduration : float\n\nTotal duration of the resulting array in seconds.\n\nscaling : float = 1.0\n\nFinal scaling factor for the noise.\n\n\n\n\n\n\nnoise : 1-D JAX array\n\nBand-limited white noise.",
-    "crumbs": [
-      "API",
-      "stimuli",
-      "stimuli.whitenoise"
-    ]
-  },
-  {
-    "objectID": "api/stimuli.whitenoise.html#functions",
-    "href": "api/stimuli.whitenoise.html#functions",
-    "title": "stimuli.whitenoise",
-    "section": "",
-    "text": "Name\nDescription\n\n\n\n\nwhitenoise\nJAX-native, JIT-compatible band-limited white noise generator.\n\n\n\n\n\nstimuli.whitenoise.whitenoise(key, cflow, cfup, fs, duration, scaling=1.0)\nJAX-native, JIT-compatible band-limited white noise generator.\nGenerates white noise with a flat power spectrum between cflow and cfup Hertz.\n\n\n\nkey : jax.random.PRNGKey\n\nThe random key for generation.\n\ncflow : float\n\nLower cutoff frequency in Hertz.\n\ncfup : float\n\nUpper cutoff frequency in Hertz.\n\nfs : int\n\nSampling rate in Hz.\n\nduration : float\n\nTotal duration of the resulting array in seconds.\n\nscaling : float = 1.0\n\nFinal scaling factor for the noise.\n\n\n\n\n\n\nnoise : 1-D JAX array\n\nBand-limited white noise.",
-    "crumbs": [
-      "API",
-      "stimuli",
-      "stimuli.whitenoise"
+      "Punit Model"
     ]
   }
 ]
