@@ -20,6 +20,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -452,7 +487,13 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">Contents</h2>
    
   <ul>
-  <li><a href="#jaxon.analyze.spectral" id="toc-jaxon.analyze.spectral" class="nav-link active" data-scroll-target="#jaxon.analyze.spectral">analyze.spectral</a></li>
+  <li><a href="#jaxon.analyze.spectral" id="toc-jaxon.analyze.spectral" class="nav-link active" data-scroll-target="#jaxon.analyze.spectral">analyze.spectral</a>
+  <ul class="collapse">
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#jaxon.analyze.spectral.spectra" id="toc-jaxon.analyze.spectral.spectra" class="nav-link" data-scroll-target="#jaxon.analyze.spectral.spectra">spectra</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -467,8 +508,61 @@ ul.task-list li input[type="checkbox"] {
 <h1>analyze.spectral</h1>
 <p><code>analyze.spectral</code></p>
 <p>Functions for spectral analysis.</p>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#jaxon.analyze.spectral.spectra">spectra</a></td>
+<td>Calculate spectral properties of the given spikes and stimulus.</td>
+</tr>
+</tbody>
+</table>
+<section id="jaxon.analyze.spectral.spectra" class="level3">
+<h3 class="anchored" data-anchor-id="jaxon.analyze.spectral.spectra">spectra</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1"></a>analyze.spectral.spectra(spikes, stimulus, fs, nfft)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Calculate spectral properties of the given spikes and stimulus.</p>
+<p>Uses the jax scipy welch method</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<dl>
+<dt><code><span class="parameter-name"><strong>spikes</strong></span> <span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">ArrayLike</span></code></dt>
+<dd>
+<p>Binaray spike train</p>
+</dd>
+<dt><code><span class="parameter-name"><strong>stimulus</strong></span> <span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">ArrayLike</span></code></dt>
+<dd>
+<p>Stimulus array</p>
+</dd>
+<dt><code><span class="parameter-name"><strong>fs</strong></span> <span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">int</span></code></dt>
+<dd>
+<p>Sampling frequency in Hertz like 30_000 Hz</p>
+</dd>
+<dt><code><span class="parameter-name"><strong>nfft</strong></span> <span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">int</span></code></dt>
+<dd>
+<p>Window size for the fast Fourier transfomation</p>
+</dd>
+</dl>
+</section>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<dl>
+<dt><code><span class="parameter-name"></span> <span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">f, pyy, pxx, pxy: jnp.ndarray</span></code></dt>
+<dd>
+<p>frequency, stimulus power spectra, spike power spectra and cross spectra</p>
+</dd>
+</dl>
 
 
+</section>
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->
