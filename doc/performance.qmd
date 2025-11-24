@@ -129,7 +129,7 @@ calc_pxx = jax.vmap(jax.jit(process_trial_jax, static_argnums=[1]), in_axes=[0, 
 ```{python}
 %%timeit
 spikes = stimulate_jax(keys, stimulus, params)
-f, pxx = calc_pxx(spikes, fs)
+pxx = calc_pxx(spikes, fs)
 ```
 
 
