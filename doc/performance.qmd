@@ -119,13 +119,15 @@ pxx= Parallel(n_jobs=-1)(delayed(process_trial)(stimulus_numba, punit_params) fo
 
 ```{python}
 def process_trial_jax(bin_array, fs):
-    return jsp.signal.welch(bin_array, nperseg=2**14, fs=fs)
+    f, pxx = jsp.signal.welch(bin_array, nperseg=2**14, fs=fs)
+    return pxx
 
 
 calc_pxx = jax.vmap(jax.jit(process_trial_jax, static_argnums=[1]), in_axes=[0, None])
 ```
 
 ```{python}
+%%timeit
 spikes = stimulate_jax(keys, stimulus, params)
 f, pxx = calc_pxx(spikes, fs)
 ```
