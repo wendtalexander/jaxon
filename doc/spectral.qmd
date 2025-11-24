@@ -57,8 +57,7 @@ numba_results: list[Result] = []
 
 for i, model in enumerate(models.iterrows()):
     params = model[1]
-    print(model[1].to_dict())
-  
+
     cell = params.pop("cell")
     eodf = params.pop("EODf")
     white_noise = whitenoise(
@@ -90,13 +89,12 @@ for i, model in enumerate(models.iterrows()):
     coherence = (np.abs(pxy) ** 2) / (pyy * pxx)
     numba_res = Result(jax_or_numba="numba", cell_id=cell, f=f, pyy=pyy, pxx=pxx, pxy=pxy)
     numba_results.append(numba_res)
-    break
 ```
 ### 3. Spectra
 ```{python}
 # | output: false
 fig = go.Figure()
-fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pyy, name="Stimulus")
+fig.add_scatter(x=jax_results[0].f, y=jax_results[0].pyy, name="Stimulus")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{yy}$", type="log", range=[-9, -2])
 ```
@@ -112,8 +110,8 @@ display(fig)
 ```{python}
 # | output: false
 fig = go.Figure()
-fig.add_scattergl(x=jax_results[0].f, y=jax_results[0].pxx, name="jax")
-fig.add_scattergl(x=numba_results[0].f, y=numba_results[0].pxx, name="numba")
+fig.add_scatter(x=jax_results[0].f, y=jax_results[0].pxx, name="jax")
+fig.add_scatter(x=numba_results[0].f, y=numba_results[0].pxx, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{xx}$", type="log", range=[-9, -2])
 ```
@@ -128,8 +126,8 @@ display(fig)
 ```{python}
 # | output: false
 fig = go.Figure()
-fig.add_scattergl(x=jax_results[0].f, y=np.abs(jax_results[0].pxy), name="jax")
-fig.add_scattergl(x=numba_results[0].f, y=np.abs(numba_results[0].pxy), name="numba")
+fig.add_scatter(x=jax_results[0].f, y=np.abs(jax_results[0].pxy), name="jax")
+fig.add_scatter(x=numba_results[0].f, y=np.abs(numba_results[0].pxy), name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 1000])
 fig.update_yaxes(title_text="$P_{xy}$", type="log", range=[-9, -2])
 ```
@@ -149,8 +147,8 @@ coherence_jax = np.abs(jax_results[0].pxy) ** 2 / (jax_results[0].pxx * jax_resu
 coherence_numba = np.abs(numba_results[0].pxy) ** 2 / (numba_results[0].pxx * numba_results[0].pyy)
 
 fig = go.Figure()
-fig.add_scattergl(x=jax_results[0].f, y=coherence_jax, name="jax")
-fig.add_scattergl(x=numba_results[0].f, y=coherence_numba, name="numba")
+fig.add_scatter(x=jax_results[0].f, y=coherence_jax, name="jax")
+fig.add_scatter(x=numba_results[0].f, y=coherence_numba, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
 fig.update_yaxes(title_text="$C_{xy}$", range=[0, 1])
 ```
@@ -168,11 +166,9 @@ display(fig)
 # | output: false
 coherences_jax = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in jax_results])
 coherences_numba = jnp.array([np.abs(res.pxy) ** 2 / (res.pxx * res.pyy) for res in numba_results])
-print(coherences_jax.shape)
 distance = jnp.linalg.norm(coherences_jax - coherences_numba, axis=1)
-print(distance)
 fig = go.Figure()
-fig.add_histogram(y=distance)
+fig.add_histogram(x=distance)
 ```
 ```{python}
 # | echo: false
@@ -190,8 +186,8 @@ transfer_jax = np.abs(jax_results[0].pxy) / jax_results[0].pxx
 transfer_numba = np.abs(numba_results[0].pxy) / numba_results[0].pxx
 
 fig = go.Figure()
-fig.add_scattergl(x=jax_results[0].f, y=transfer_jax, name="jax")
-fig.add_scattergl(x=numba_results[0].f, y=transfer_numba, name="numba")
+fig.add_scatter(x=jax_results[0].f, y=transfer_jax, name="jax")
+fig.add_scatter(x=numba_results[0].f, y=transfer_numba, name="numba")
 fig.update_xaxes(title_text="f [Hz]", range=[0, 300])
 fig.update_yaxes(title_text="$H_{xy}$")
 fig.show()

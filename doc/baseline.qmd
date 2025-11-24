@@ -136,7 +136,6 @@ for i, model in enumerate(models.iterrows()):
         crate=crate_numba,
     )
     numba_results.append(numba_res)
-    break
 ```
 ### 3. Rate
 ```{python}
