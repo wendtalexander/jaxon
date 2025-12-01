@@ -60,6 +60,9 @@ website:
         - baseline.qmd
         - spectral.qmd
         - performance.qmd
+      - section: "Power Spectra"
+        contents:
+        - ou.qmd
       - section: "API"
         href: "api/index.qmd"
         contents:
