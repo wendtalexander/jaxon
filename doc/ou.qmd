@@ -64,7 +64,7 @@ def pxx_theory(f, gamma, noise_strength):
     return 2 * noise_strength / (gamma**2 + (2 * jnp.pi * f) ** 2)
 
 
-nperseg = 2**15
+nperseg = 2**16
 f, pxx_welch = jsp.signal.welch(v, fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
 pxx_th = pxx_theory(f, gamma, noise_strength)
 print(pxx_welch[0])
@@ -107,31 +107,13 @@ fig.add_scatter(x=f, y=pxx_th, name="Theory")
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
 ```
-## 7. with fft
-
-```{python}
-tau = nperseg * fs
-fft_pxx = jnp.fft.fft(v_segments)
-pxx_fft = (jnp.abs(fft_pxx) ** 2) / tau
-pxx_fft = pxx_fft.sum(axis=0) / num_segments
-
-
-fig = go.Figure()
-fig.add_scatter(x=f, y=pxx_fft, name="welch")
-fig.add_scatter(x=f, y=pxx_th, name="Theory")
-fig.update_yaxes(type="log")
-fig.update_xaxes(range=[0, 15])
-```
-
 
 ```{python}
 fig = go.Figure()
 fig.add_scatter(x=f, y=pxx_rfft, name="rfft")
-fig.add_scatter(x=f, y=pxx_fft, name="welch")
-fig.add_scatter(x=f, y=pxx_fft, name="fft")
 fig.add_scatter(x=f, y=pxx_segmemts, name="welch-segments")
 fig.add_scatter(x=f, y=pxx_welch, name="welch-overlapp")
-fig.add_scatter(x=f, y=pxx_th, name="Theory")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_width=5, line_color="black")
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
 ```
