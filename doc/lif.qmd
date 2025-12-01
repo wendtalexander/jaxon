@@ -40,6 +40,7 @@ Here is a minimal example that get you started.
 ```{python}
 import jax
 import jax.numpy as jnp
+
 import jaxon.models.lif as lif
 
 # parameters for LIF model
@@ -54,7 +55,7 @@ noise_strength = 0.01
 # first generate a random key for the LIF model
 key = jax.random.PRNGKey(42)
 keys = jax.random.split(key, 10)
-time = jnp.arange(0, duration, 1/fs)
+time = jnp.arange(0, duration, 1 / fs)
 params = lif.LIFParams(fs, threshold, v_offset, tau_mem, v_base, noise_strength)
 stimulus = jnp.ones_like(time)
 binary_spikes, vmem = lif.simulate(key, stimulus, params)
@@ -64,22 +65,27 @@ print(f"Indiviual indeces of the spike times are {time[binary_spikes.astype(bool
 We can now plot the simulation result of the LIF simulation.
 
 ```{python}
-#| output: false
-import plotly.graph_objects as go 
+# | output: false
+import plotly.graph_objects as go
 
 fig = go.Figure()
-fig.add_scatter(x=time, y=vmem, mode='lines', name="V")
+fig.add_scatter(x=time, y=vmem, mode="lines", name="V")
 
-fig.add_scatter(x=time[binary_spikes.astype(bool)],
-                y=vmem[binary_spikes.astype(bool)]+threshold, mode='markers',
-                marker_size=10, marker_color="red", marker_symbol="arrow-down",
-                name="Spikes")
+fig.add_scatter(
+    x=time[binary_spikes.astype(bool)],
+    y=vmem[binary_spikes.astype(bool)] + threshold,
+    mode="markers",
+    marker_size=10,
+    marker_color="red",
+    marker_symbol="arrow-down",
+    name="Spikes",
+)
 fig.update_layout(xaxis_title="Time [s]", yaxis_title="Volatage [aU]")
 ```
 
 ```{python}
-#| echo: false
-#| renderings: [light, dark]
+# | echo: false
+# | renderings: [light, dark]
 
 fig.update_layout(template="plotly_white")
 display(fig)
