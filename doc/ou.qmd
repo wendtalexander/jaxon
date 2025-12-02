@@ -19,20 +19,30 @@ import jaxon.models.ou as ou
 
 key = jax.random.PRNGKey(42)
 fs = 30_000
+nperseg = 2**16
 duration = 10
-gamma = 1
+gamma = 1.2
 noise_strength = 0.1
+theory_color = "magenta"
 time = jnp.arange(0, duration, 1 / fs)
 params = ou.OUParams(fs=fs, gamma=gamma, noise_strength=noise_strength)
 v = ou.simulate(key, duration, params)
 ```
 
 ```{python}
-
+# | output: false
 import plotly.graph_objects as go
 
 fig = go.Figure()
 fig.add_scatter(x=time, y=v, mode="lines", name="V")
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 ## 3. Probability density function 
 $$ P(V,t) = \frac{1}{\sqrt{2\pi<\Delta v^2(t)>}} \exp{-\frac{(V- <v(t)>)^2}{2<\Delta v^2(t)>}} $$
@@ -42,6 +52,7 @@ and
 $$<\Delta v^2 (t)> = \frac{D}{\gamma}[1-e^{-2\gamma t}]$$
 
 ```{python}
+# | output: false
 def psd_oe(time, V, gamma, noise_strength):
     delta_vt = (noise_strength / gamma) * (1 - jnp.exp(-2 * gamma * time))
     vt = jnp.exp(-gamma * time)
@@ -52,49 +63,74 @@ def psd_oe(time, V, gamma, noise_strength):
 voltages = jnp.linspace(-1, 1, len(time))
 theory = psd_oe(time, voltages, gamma, noise_strength)
 fig = go.Figure()
-
 fig.add_histogram(x=v, name="V", histnorm="probability density", nbinsx=50)
-fig.add_scatter(x=voltages, y=theory, mode="lines")
+fig.add_scatter(x=voltages, y=theory, mode="lines", line_color=theory_color)
+fig.update_layout(xaxis_title="Voltage", yaxis_title="Probabilty density")
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 ## 4. Welch method with overlapp
-$$ S(f) = \frac{2D}{\gamma^2 + (2 \pi f)^2} $$
-```{python}
 
+$$ S(f) = \frac{2D}{\gamma^2 + (2 \pi f)^2} $$
+
+```{python}
+# | output: false
 def pxx_theory(f, gamma, noise_strength):
     return 2 * noise_strength / (gamma**2 + (2 * jnp.pi * f) ** 2)
 
 
-nperseg = 2**16
 f, pxx_welch = jsp.signal.welch(v, fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
 pxx_th = pxx_theory(f, gamma, noise_strength)
-print(pxx_welch[0])
 fig = go.Figure()
 fig.add_scatter(x=f, y=pxx_welch, name="welch")
-fig.add_scatter(x=f, y=pxx_th, name="Theory")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_color=theory_color)
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
 
 ## 5. Without Overlapp
 ```{python}
+# | output: false
 num_samples = fs * duration
 num_segments = jnp.floor(num_samples / nperseg).astype(int)
 print(num_segments)
 v_segments = v[: num_segments * nperseg].reshape(num_segments, nperseg)
 print(v_segments.shape)
-f, pxx_segmemts = jsp.signal.welch(v_segments, fs=fs, nperseg=nperseg)
+f, pxx_segmemts = jsp.signal.welch(v_segments, fs=fs, nperseg=nperseg, detrend=False)
 pxx_segmemts = pxx_segmemts.sum(axis=0) / num_segments
 print(pxx_segmemts[0])
 fig = go.Figure()
 fig.add_scatter(x=f, y=pxx_segmemts, name="welch")
-fig.add_scatter(x=f, y=pxx_th, name="Theory")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_color=theory_color)
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
 ```
-
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
 ## 6. With rfft
 
 ```{python}
+# | output: false
 tau = nperseg * fs
 fft_pxx = jnp.fft.rfft(v_segments)
 pxx_rfft = (jnp.abs(fft_pxx) ** 2) / tau
@@ -102,18 +138,59 @@ pxx_rfft = pxx_rfft.sum(axis=0) / num_segments
 
 
 fig = go.Figure()
-fig.add_scatter(x=f, y=pxx_rfft, name="welch")
-fig.add_scatter(x=f, y=pxx_th, name="Theory")
+fig.add_scatter(x=f, y=pxx_rfft, name="rfft")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_color=theory_color)
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
 ```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
+
+## 6. With rfft with subtracting the mean
 
 ```{python}
+# | output: false
+tau = nperseg * fs
+fft_pxx = jnp.fft.rfft(v_segments - jnp.mean(v_segments, axis=1, keepdims=True))
+pxx_rfft_mean = (jnp.abs(fft_pxx) ** 2) / tau
+pxx_rfft_mean = pxx_rfft_mean.sum(axis=0) / num_segments
+
+
+fig = go.Figure()
+fig.add_scatter(x=f, y=pxx_rfft_mean, name="rfft")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_color=theory_color)
+fig.update_yaxes(type="log")
+fig.update_xaxes(range=[0, 15])
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
+```
+```{python}
+# | output: false
 fig = go.Figure()
 fig.add_scatter(x=f, y=pxx_rfft, name="rfft")
 fig.add_scatter(x=f, y=pxx_segmemts, name="welch-segments")
 fig.add_scatter(x=f, y=pxx_welch, name="welch-overlapp")
-fig.add_scatter(x=f, y=pxx_th, name="Theory", line_width=5, line_color="black")
+fig.add_scatter(x=f, y=pxx_th, name="Theory", line_width=5, line_color=theory_color)
 fig.update_yaxes(type="log")
 fig.update_xaxes(range=[0, 15])
+```
+```{python}
+# | echo: false
+# | renderings: [light, dark]
+fig.update_layout(template="plotly_white")
+display(fig)
+fig.update_layout(template="plotly_dark")
+display(fig)
 ```
